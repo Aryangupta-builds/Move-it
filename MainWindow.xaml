@@ -151,24 +151,30 @@
           </ScrollViewer>
         </Grid>
 
-        <!-- SCAN / device discovery -->
+        <!-- SCAN / device discovery: radar centred in the page; the "nothing found" help appears BELOW in a reserved area (nothing jumps) -->
         <Grid x:Name="ScanPage" Visibility="Collapsed">
           <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
-          <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Spacing="12" Margin="0,0,0,24">
-              <Viewbox MaxWidth="240" MaxHeight="240"><local:Radar x:Name="ScanRadar"/></Viewbox>
-              <TextBlock x:Name="ScanTitle" Text="Looking for nearby laptops…" Style="{StaticResource MiHeading}" HorizontalAlignment="Center" TextAlignment="Center"/>
-              <TextBlock Text="Open MoveIt on the other laptop and tap Receive" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
+          <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto" MinHeight="190"/></Grid.RowDefinitions>
+          <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560" Spacing="14" Margin="0,8,0,8">
+              <Grid HorizontalAlignment="Center">
+                <!-- soft glow behind the radar -->
+                <Ellipse Width="330" Height="330" IsHitTestVisible="False">
+                  <Ellipse.Fill>
+                    <RadialGradientBrush>
+                      <GradientStop Color="#3338BDF8" Offset="0"/><GradientStop Color="#1A8B5CF6" Offset="0.55"/><GradientStop Color="#008B5CF6" Offset="1"/>
+                    </RadialGradientBrush>
+                  </Ellipse.Fill>
+                </Ellipse>
+                <Viewbox MaxWidth="290" MaxHeight="290"><local:Radar x:Name="ScanRadar"/></Viewbox>
+              </Grid>
+              <TextBlock x:Name="ScanTitle" Text="Looking for nearby laptops…" Style="{StaticResource MiTitle}" FontSize="24" HorizontalAlignment="Center" TextAlignment="Center"/>
+              <TextBlock Text="Open MoveIt on the other laptop and tap Receive, then choose Pairing code" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
               <!-- loading state -->
-              <StackPanel x:Name="ScanLoading" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-                <ProgressRing IsActive="True" Width="20" Height="20"/>
-                <TextBlock Text="Searching your WiFi…" Style="{StaticResource MiCaption}" VerticalAlignment="Center"/>
-              </StackPanel>
-              <!-- empty state (after a few searches with nothing found) -->
-              <Border x:Name="ScanEmpty" Style="{StaticResource GlassCard}" Visibility="Collapsed" HorizontalAlignment="Stretch">
-                <StackPanel Spacing="8">
-                  <StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE9CE;" FontSize="18"/><TextBlock Text="No laptop found yet" Style="{StaticResource MiSubhead}"/></StackPanel>
-                  <TextBlock Style="{StaticResource MiBody}" Opacity="0.8" Text="• Both laptops must be on the same WiFi network.&#x0A;• The other laptop must be on the Receive screen.&#x0A;• If Windows asked about network access, choose Allow.&#x0A;• Still nothing? Use the pairing code and IP address below."/>
+              <Border x:Name="ScanLoading" CornerRadius="16" Padding="14,7" HorizontalAlignment="Center" Background="{ThemeResource GlassBrush}" BorderBrush="{ThemeResource GlassStroke}" BorderThickness="1">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <ProgressRing IsActive="True" Width="16" Height="16"/>
+                  <TextBlock Text="Searching your WiFi…" Style="{StaticResource MiCaption}" Opacity="0.9" VerticalAlignment="Center"/>
                 </StackPanel>
               </Border>
               <GridView x:Name="DeviceGrid" IsItemClickEnabled="True" SelectionMode="None" ItemClick="Device_Click" HorizontalAlignment="Center">
@@ -187,9 +193,23 @@
                   </DataTemplate>
                 </GridView.ItemTemplate>
               </GridView>
-              <HyperlinkButton Content="Can't find it? Enter pairing code or IP address" Click="Manual_Click" HorizontalAlignment="Center"/>
             </StackPanel>
           </ScrollViewer>
+
+          <!-- below the radar: help (only after a few empty searches) + manual entry -->
+          <StackPanel Grid.Row="1" Spacing="10" HorizontalAlignment="Center" MaxWidth="560" VerticalAlignment="Top" Margin="0,0,0,12">
+            <Border x:Name="ScanEmpty" Style="{StaticResource GlassCard}" CornerRadius="20" Visibility="Collapsed" HorizontalAlignment="Stretch">
+              <Grid ColumnSpacing="14">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Border Width="44" Height="44" CornerRadius="14" VerticalAlignment="Top" Background="{StaticResource TileAmber}"><FontIcon Glyph="&#xE9CE;" FontSize="20" Foreground="White"/></Border>
+                <StackPanel Grid.Column="1" Spacing="6">
+                  <TextBlock Text="No laptop found yet" Style="{StaticResource MiSubhead}"/>
+                  <TextBlock Style="{StaticResource MiCaption}" Opacity="0.85" Text="•  Both laptops must be on the same WiFi network.&#x0A;•  The other laptop must be on the Receive screen.&#x0A;•  If Windows asked about network access, choose Allow.&#x0A;•  Still nothing? Use the pairing code and IP address."/>
+                </StackPanel>
+              </Grid>
+            </Border>
+            <HyperlinkButton Content="Can't find it? Enter pairing code or IP address" Click="Manual_Click" HorizontalAlignment="Center"/>
+          </StackPanel>
         </Grid>
 
         <!-- SEND -->
@@ -294,28 +314,28 @@
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640" Spacing="24" Margin="0,8,0,28">
               <StackPanel Spacing="4" HorizontalAlignment="Center">
-                <TextBlock Text="Receive from where?" Style="{StaticResource MiTitle}" HorizontalAlignment="Center" TextAlignment="Center"/>
-                <TextBlock Text="Choose where the files are coming from" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
+                <TextBlock Text="How should the files reach you?" Style="{StaticResource MiTitle}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                <TextBlock Text="Pick the way that fits the device you are sending from" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
               </StackPanel>
               <StackPanel Spacing="14" Margin="12,0">
-                <Button x:Name="RxLapCard" Style="{StaticResource CardButton}" Click="RxFromLaptop_Click" AutomationProperties.Name="Receive from a laptop">
+                <Button x:Name="RxLapCard" Style="{StaticResource CardButton}" Click="RxFromLaptop_Click" AutomationProperties.Name="Receive with a pairing code from another laptop running MoveIt">
                   <Grid ColumnSpacing="18">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileBlue}"><FontIcon Glyph="&#xE7F8;" FontSize="28" Foreground="White"/></Border>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <TextBlock Text="From a laptop" Style="{StaticResource MiHeading}"/>
-                      <TextBlock Text="Pair with a 6-digit code" Style="{StaticResource MiCaption}"/>
+                      <TextBlock Text="Pairing code" Style="{StaticResource MiHeading}"/>
+                      <TextBlock Text="From another laptop that has MoveIt. Type a 6-digit code on it." Style="{StaticResource MiCaption}"/>
                     </StackPanel>
                     <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16" Opacity="0.55" VerticalAlignment="Center"/>
                   </Grid>
                 </Button>
-                <Button x:Name="RxPhoneCard" Style="{StaticResource CardButton}" Click="RxFromPhone_Click" AutomationProperties.Name="Receive from a phone or tablet">
+                <Button x:Name="RxPhoneCard" Style="{StaticResource CardButton}" Click="RxFromPhone_Click" AutomationProperties.Name="Receive with a QR code or link from a phone, tablet or any browser">
                   <Grid ColumnSpacing="18">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileAmber}"><FontIcon Glyph="&#xE8EA;" FontSize="28" Foreground="White"/></Border>
+                    <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileAmber}"><FontIcon Glyph="&#xED14;" FontSize="28" Foreground="White"/></Border>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <TextBlock Text="From phone / tablet" Style="{StaticResource MiHeading}"/>
-                      <TextBlock Text="Scan a QR code" Style="{StaticResource MiCaption}"/>
+                      <TextBlock Text="QR code or link" Style="{StaticResource MiHeading}"/>
+                      <TextBlock Text="From a phone, tablet or any browser. No app needed." Style="{StaticResource MiCaption}"/>
                     </StackPanel>
                     <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16" Opacity="0.55" VerticalAlignment="Center"/>
                   </Grid>
@@ -352,9 +372,19 @@
                     <Border Background="White" CornerRadius="27" Padding="18"><Image x:Name="QrImg" Width="220" Height="220"/></Border>
                   </Border>
                   <StackPanel Spacing="4">
-                    <TextBlock Text="Scan with your phone camera" Style="{StaticResource MiHeading}" FontSize="18" HorizontalAlignment="Center" TextAlignment="Center"/>
-                    <TextBlock Text="Phone and PC must be on the same WiFi. No app needed." Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    <TextBlock Text="Scan with a phone or tablet camera" Style="{StaticResource MiHeading}" FontSize="18" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    <TextBlock Text="Both devices must be on the same WiFi. No app needed." Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
                   </StackPanel>
+                  <!-- no camera (e.g. another PC)? open the link in any browser -->
+                  <Border CornerRadius="16" Padding="14,10" Background="#14FFFFFF" HorizontalAlignment="Center">
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="OR OPEN THIS LINK IN ANY BROWSER" Style="{StaticResource MiCaption}" CharacterSpacing="100" HorizontalAlignment="Center"/>
+                      <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                        <TextBlock x:Name="RxLink" FontFamily="Consolas" FontSize="13" IsTextSelectionEnabled="True" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="260"/>
+                        <Button Style="{StaticResource MiButton}" Padding="12,4" Click="CopyLink_Click"><StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE8C8;" FontSize="12"/><TextBlock x:Name="CopyLinkText" Text="Copy link" FontSize="12"/></StackPanel></Button>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
                   <Border CornerRadius="16" Padding="12,6" Background="#14FFFFFF" HorizontalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="8" Height="8" Fill="{StaticResource WarnBrush}" VerticalAlignment="Center"/><TextBlock Text="Waiting for your phone" FontSize="12" Opacity="0.85"/></StackPanel>
                   </Border>
@@ -374,7 +404,9 @@
                 <Border CornerRadius="14" Padding="12,6" Background="#26FFFFFF" HorizontalAlignment="Left"><TextBlock x:Name="RxDevice" Text="—" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></Border>
                 <Border Grid.Column="1" CornerRadius="14" Padding="12,6" Background="#26FFFFFF"><TextBlock x:Name="RxStateText" Text="Waiting" FontSize="12" FontWeight="SemiBold"/></Border>
               </Grid>
-              <Border x:Name="RxBottom" VerticalAlignment="Bottom" Margin="16" CornerRadius="18" Padding="18" Background="#D90A1330" BorderBrush="#26FFFFFF" BorderThickness="1" SizeChanged="RxBottom_SizeChanged">
+              <Border x:Name="RxBottom" VerticalAlignment="Bottom" Margin="16" CornerRadius="18" Padding="18" Background="#D90A1330" BorderBrush="#26FFFFFF" BorderThickness="1" SizeChanged="RxBottom_SizeChanged"
+                      Opacity="0" IsHitTestVisible="False" PointerEntered="RxBottom_PointerEntered" PointerExited="RxBottom_PointerExited">
+                <Border.OpacityTransition><ScalarTransition Duration="0:0:0.35"/></Border.OpacityTransition>
                 <StackPanel Spacing="12">
                   <StackPanel x:Name="RxResultHead" Orientation="Horizontal" Spacing="12" Visibility="Collapsed">
                     <Grid Width="44" Height="44"><Ellipse x:Name="RxResDot" Fill="{StaticResource OkBrush}"/><FontIcon x:Name="RxResIcon" Glyph="&#xE73E;" FontSize="20" Foreground="White"/></Grid>

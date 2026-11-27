@@ -22,7 +22,7 @@ public sealed partial class ParticleFlow : UserControl
     enum Mode { Off, Idle, Active, Complete, Error }
     enum Pal { Blue = 0, Green = 1, Red = 2 }
 
-    sealed class Ripple { public SpriteVisual V = null!; public CompositionColorGradientStop[] St = null!; public double Age, Life, Strength; public bool Alive; }
+    sealed class Ripple { public SpriteVisual V = null!; public CompositionColorGradientStop[] St = null!; public double Age, Life, Strength; public bool Alive, Hit; }
     sealed class AuraSet { public ContainerVisual Root = null!; public SpriteVisual[] Blobs = null!; public double Weight; }
 
     // aura layout: peak, anchor x/y (fractions of w/h), size x/y (fractions)
@@ -62,7 +62,54 @@ public sealed partial class ParticleFlow : UserControl
     double centerFraction = 0.42;
     public double CenterFraction { get => centerFraction; set { centerFraction = value; UpdateCenter(); } }
 
-    void UpdateCenter() { cx = w / 2; cy = h * centerFraction; Badge.Margin = new Thickness(0, cy - 46, 0, 0); }
+    void UpdateCenter()
+    {
+        cx = w / 2; cy = h * centerFraction;
+        DevIcon.Margin = new Thickness(0, cy - 76, 0, 0);
+        Badge.Margin = new Thickness(cx + 54 - 22, cy + 54 - 22, 0, 0);   // lower-right of the icon
+    }
+
+    // ---- device icon ----
+    public event Action<bool>? IconHover;   // true = pointer over the icon
+    public event Action? IconTapped;        // touch / click on the icon
+    void Dev_PointerEntered(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) => IconHover?.Invoke(true);
+    void Dev_PointerExited(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) => IconHover?.Invoke(false);
+    void Dev_Tapped(object s, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e) => IconTapped?.Invoke();
+
+    // "Phone" / "Tablet" / "Laptop" ... -> matching icon. Anything unknown = phone.
+    public void SetDevice(string type)
+    {
+        var t = (type ?? "").ToLowerInvariant();
+        DevGlyph.Glyph = t.Contains("tablet") && !t.Contains("phone") ? "\uE70A"
+                       : t.Contains("laptop") || t.Contains("pc") || t.Contains("computer") ? "\uE7F8"
+                       : "\uE8EA";
+    }
+
+    public void SetProgress(double pct) => DevRing.Value = Math.Clamp(pct, 0, 100);
+
+    void ShowIcon()
+    {
+        if (DevIcon.Visibility == Visibility.Visible && DevIcon.Opacity > 0.5) return;
+        DevIcon.Visibility = Visibility.Visible; DevIcon.Opacity = 1;
+        DevT.ScaleX = DevT.ScaleY = 0.6; Scale(DevT, 1, 0.55, new BackEase { Amplitude = 0.6, EasingMode = EasingMode.EaseOut });
+    }
+
+    void HideIcon() { iconSb?.Stop(); DevIcon.Opacity = 0; DevIcon.Visibility = Visibility.Collapsed; DevT.ScaleX = DevT.ScaleY = 1; DevRing.Value = 0; }
+
+    Storyboard? iconSb;
+    void Scale(CompositeTransform t, double to, double secs, EasingFunctionBase ease, bool autoReverse = false)
+    {
+        iconSb?.Stop(); var sb = new Storyboard();
+        foreach (var prop in new[] { "ScaleX", "ScaleY" })
+        {
+            var a = new DoubleAnimation { To = to, Duration = TimeSpan.FromSeconds(secs), EasingFunction = ease, AutoReverse = autoReverse };
+            Storyboard.SetTarget(a, t); Storyboard.SetTargetProperty(a, prop); sb.Children.Add(a);
+        }
+        iconSb = sb; sb.Begin();
+    }
+
+    // a ripple has just been absorbed by the icon
+    void Absorb(double strength) { if (DevIcon.Visibility == Visibility.Visible) Scale(DevT, 1 + 0.05 * strength, 0.16, new SineEase { EasingMode = EasingMode.EaseOut }, true); }
 
     public ParticleFlow()
     {
@@ -119,6 +166,7 @@ public sealed partial class ParticleFlow : UserControl
         pal = p;
         var c = AuraCols[(int)p][2];
         Fx.Recolor(badgeGlow, WColor.FromArgb(255, c.R, c.G, c.B), 0.55);
+        DevRing.Foreground = new SolidColorBrush(WColor.FromArgb(255, AuraCols[(int)p][2].R, AuraCols[(int)p][2].G, AuraCols[(int)p][2].B));
         if (prev != null) { root.Children.Remove(prev.Root); prev = null; }
         if (cur != null) { if (instant) root.Children.Remove(cur.Root); else prev = cur; }
         cur = BuildAura(p, instant ? 1 : 0);
@@ -127,29 +175,29 @@ public sealed partial class ParticleFlow : UserControl
     // ---- public states ----
     public void Start()
     {
-        HideBadge(); KillRipples(); SetPal(Pal.Blue, true);
+        HideBadge(); HideIcon(); KillRipples(); SetPal(Pal.Blue, true);
         SetMode(Mode.Idle); interval = 2.0; spawnIn = 0.3; burst = 0; flash = 0; washT = washTarget = 0; wash.Opacity = 0;
         glowTarget = 0.2; dimTarget = 1; Hook();
     }
     public void Connect()
     {
-        SetPal(Pal.Blue, false); SetMode(Mode.Active); interval = 0.85; spawnIn = 0.9;
+        ShowIcon(); SetPal(Pal.Blue, false); SetMode(Mode.Active); interval = 0.85; spawnIn = 0.9;
         burst = 3; burstIn = 0; flash = 1; glowTarget = 0.6; dimTarget = 1; washTarget = 0; PlayBadge(0); Hook();
     }
     public void Complete()
     {
-        SetPal(Pal.Green, false); SetMode(Mode.Complete);
+        ShowIcon(); DevRing.Value = 100; SetPal(Pal.Green, false); SetMode(Mode.Complete);
         burst = 3; burstIn = 0; flash = 1; glowTarget = 0.9; dimTarget = 1; washTarget = 0; PlayBadge(1); Hook();
     }
     public void Error()
     {
-        SetPal(Pal.Red, false); SetMode(Mode.Error);
+        ShowIcon(); SetPal(Pal.Red, false); SetMode(Mode.Error);
         burst = 2; burstIn = 0; flash = 1; glowTarget = 0.6; dimTarget = 1; washTarget = 1; PlayBadge(2); Hook();
     }
     public void Dim() => Error();   // old name: cancelled / failed
     public void Stop()
     {
-        SetMode(Mode.Off); HideBadge(); Unhook(); KillRipples();
+        SetMode(Mode.Off); HideBadge(); HideIcon(); Unhook(); KillRipples();
         badgeGlow.Opacity = 0; wash.Opacity = 0; if (cur != null) cur.Root.Opacity = 0;
         glow = glowTarget = 0; burst = 0; flash = 0; washT = washTarget = 0;
     }
@@ -181,7 +229,7 @@ public sealed partial class ParticleFlow : UserControl
         if (r == null) return;
         var c = Mix(RipCols[(int)pal], hue + rnd.NextDouble() * 0.08);
         Fx.ColorRing(r.St, c.R, c.G, c.B);
-        r.Age = 0; r.Life = 2.8 + rnd.NextDouble() * 0.8; r.Strength = strength; r.Alive = true;
+        r.Age = 0; r.Life = 2.4 + rnd.NextDouble() * 0.6; r.Strength = strength; r.Alive = true; r.Hit = false;
         r.V.Opacity = 0; r.V.IsVisible = true;
     }
 
@@ -206,18 +254,19 @@ public sealed partial class ParticleFlow : UserControl
             if (spawnIn <= 0) { Spawn(mode == Mode.Active ? 0.8 + rnd.NextDouble() * 0.2 : 0.5); spawnIn = interval * (0.9 + rnd.NextDouble() * 0.2); }
         }
 
-        // ripples expand from the top-centre like a pressure wave (fast start, slow end) and fade
-        double maxR = Math.Max(h * 1.05, w * 0.6), oy = -h * 0.02; bool anyAlive = false;
+        // ripples roll down from the top-centre and are absorbed by the device icon (crest reaches the icon, fades, icon pulses)
+        double oy = -h * 0.02, maxR = Math.Max(90, (cy - oy - 62) / (0.9 * 0.92)); bool anyAlive = false;
         foreach (var r in pool)
         {
             if (!r.Alive) continue;
             r.Age += dt; double t = r.Age / r.Life;
             if (t >= 1) { r.Alive = false; r.V.IsVisible = false; continue; }
             anyAlive = true;
-            double ease = 1 - Math.Pow(1 - t, 2.2), s = (30 + (maxR - 30) * ease) / 200;
+            double ease = 1 - Math.Pow(1 - t, 1.8), s = (30 + (maxR - 30) * ease) / 200;
             r.V.Scale = new Vector3((float)(s * 1.08), (float)(s * 0.92), 1);
             r.V.Offset = new Vector3((float)(cx - 200), (float)(oy - 200), 0);
-            r.V.Opacity = (float)Math.Clamp(Math.Pow(1 - t, 1.5) * Math.Min(1, t * 12) * r.Strength * dim, 0, 1);
+            r.V.Opacity = (float)Math.Clamp((1 - Math.Pow(t, 4)) * Math.Min(1, t * 10) * r.Strength * dim, 0, 1);
+            if (!r.Hit && t > 0.86) { r.Hit = true; Absorb(r.Strength); }
         }
 
         // aura (cross-fades when the colour set changes)

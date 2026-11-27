@@ -24,7 +24,8 @@ public sealed partial class MainWindow : Window
     string targetIp = "", targetCode = "", targetName = "";
     WebShare? web; Receiver? rx; CancellationTokenSource? scanCts, txCts;
     int scanRounds;
-    readonly DispatcherQueueTimer rxTimer;
+    readonly DispatcherQueueTimer rxTimer, rxPanelTimer;
+    bool rxHover, rxPanelOk;   // rxHover: pointer over icon/panel; rxPanelOk: details exist (a transfer started or ended), so hover may show them
 
     public MainWindow()
     {
@@ -37,6 +38,10 @@ public sealed partial class MainWindow : Window
         items.CollectionChanged += (_, _) => RefreshItemsUi();
         VersionText.Text = "v" + AppInfo.Version; AboutVersion.Text = "Version " + AppInfo.Version;
         rxTimer = DispatcherQueue.CreateTimer(); rxTimer.Interval = TimeSpan.FromMilliseconds(120); rxTimer.Tick += (_, _) => RxTick();
+        rxPanelTimer = DispatcherQueue.CreateTimer(); rxPanelTimer.Interval = TimeSpan.FromSeconds(4);
+        rxPanelTimer.Tick += (_, _) => { rxPanelTimer.Stop(); if (!rxHover && rxReceiving) ShowRxPanel(false); };
+        Particle.IconHover += inside => { rxHover = inside; if (inside) { rxPanelTimer.Stop(); if (rxPanelOk) ShowRxPanel(true); } else if (rxReceiving) { rxPanelTimer.Interval = TimeSpan.FromSeconds(1.5); rxPanelTimer.Start(); } };
+        Particle.IconTapped += () => { if (!rxPanelOk || !rxReceiving) return; if (RxBottom.Opacity > 0.5) ShowRxPanel(false); else PulseRxPanel(); };   // touch: tap toggles
         Closed += (_, _) => StopAll(true);
         LoadSettings();
         RootGrid.ActualThemeChanged += (_, _) => UpdateCaptionButtons();
@@ -156,7 +161,7 @@ public sealed partial class MainWindow : Window
 
     void StopAll(bool sync = false)
     {
-        rxGen++; rxTimer.Stop(); rxReceiving = false; rxConnected = false;
+        rxGen++; rxTimer.Stop(); rxPanelTimer.Stop(); rxReceiving = false; rxConnected = false;
         scanCts?.Cancel(); txCts?.Cancel();
         ScanRadar.Stop(); Particle.Stop(); SendFx.Stop();
         rx?.Stop(); rx = null; web?.Stop(); web = null;
@@ -615,15 +620,22 @@ public sealed partial class MainWindow : Window
         RxResultHead.Visibility = v; RxResult.Visibility = v; RxResDetails.Visibility = v;
     }
 
-    // keep the particle gathering point (and the connect badge) in the free space above the data panel
+    // details panel (file, format, size, speed...) sits at the bottom. While receiving it shows for a few seconds and hides by itself;
+    // hover / tap on the device icon (or on the panel) shows it again. After the transfer ends it stays (result + buttons).
+    void ShowRxPanel(bool show) { RxBottom.Opacity = show ? 1 : 0; RxBottom.IsHitTestVisible = show; }
+    void PulseRxPanel() { ShowRxPanel(true); rxPanelTimer.Stop(); rxPanelTimer.Interval = TimeSpan.FromSeconds(4); rxPanelTimer.Start(); }
+    void RxBottom_PointerEntered(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) { rxHover = true; rxPanelTimer.Stop(); }
+    void RxBottom_PointerExited(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) { rxHover = false; if (rxReceiving) { rxPanelTimer.Interval = TimeSpan.FromSeconds(1.5); rxPanelTimer.Start(); } }
+
+    // the device icon keeps ONE fixed place: in the free space above the (maximum height) details panel, so it never jumps when the panel changes
     void RxLive_SizeChanged(object s, SizeChangedEventArgs e) => UpdateStageCenter();
-    void RxBottom_SizeChanged(object s, SizeChangedEventArgs e) => UpdateStageCenter();
+    void RxBottom_SizeChanged(object s, SizeChangedEventArgs e) { }
     void UpdateStageCenter()
     {
         double h = RxLiveView.ActualHeight; if (h <= 0) return;
-        double top = 56, bottom = h - RxBottom.ActualHeight - 32;
-        double center = bottom > top ? (top + bottom) / 2 : h * 0.3;
-        Particle.CenterFraction = Math.Clamp(center / h, 0.2, 0.46);
+        double top = 64, bottom = h - 300;                    // ~300 px reserved for the details panel
+        double center = bottom > top + 160 ? (top + bottom) / 2 : Math.Max(120, h * 0.3);
+        Particle.CenterFraction = Math.Clamp(center / h, 0.15, 0.5);
     }
 
     void StartReceiving(bool phone)
@@ -636,7 +648,7 @@ public sealed partial class MainWindow : Window
         CodeText.Text = code;
         CodeCard.Visibility = phone ? Visibility.Collapsed : Visibility.Visible;
         PhoneCard.Visibility = Visibility.Collapsed;
-        RxTitle.Text = phone ? "Receive from phone or tablet" : "Ready to receive";
+        RxTitle.Text = phone ? "Scan to send files" : "Ready to receive";
         RxName.Text = $"Visible as {DeviceName}  •  {Net.LocalIp()}";
         RxName.Visibility = phone ? Visibility.Collapsed : Visibility.Visible;
         ResetRxView(phone ? "" : "Waiting for the other laptop…");
@@ -657,7 +669,7 @@ public sealed partial class MainWindow : Window
     void ResetRxView(string status)
     {
         rxReceiving = false; rxConnected = false; rxTimer.Stop();
-        Particle.Stop(); ShowRxLive(false);
+        Particle.Stop(); ShowRxLive(false); rxPanelTimer.Stop(); rxPanelOk = false; ShowRxPanel(false);
         ShowRxResult(false); RxProgCard.Visibility = Visibility.Collapsed; RxCancelBtn.Visibility = Visibility.Collapsed;
         InstallBtn.Visibility = Visibility.Collapsed; RxNote.Visibility = Visibility.Collapsed;
         RxDevice.Text = RxFile.Text = RxFormat.Text = RxSize.Text = RxFiles.Text = "—";
@@ -681,7 +693,7 @@ public sealed partial class MainWindow : Window
         if (!rxReceiving) EnterReceiving();
         double pct = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
         double speed = rxRate.Update(p.Done, Environment.TickCount64);
-        RxBar.Value = pct; RxPercent.Text = $"{pct:0}%";
+        RxBar.Value = pct; RxPercent.Text = $"{pct:0}%"; Particle.SetProgress(pct);
         RxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}";
         RxSpeed.Text = speed > 0 ? Fmt(speed) + "/s" : "—";
         RxEta.Text = "ETA " + AppInfo.Eta(p.Total - p.Done, speed);
@@ -692,8 +704,8 @@ public sealed partial class MainWindow : Window
 
     void EnterReceiving()
     {
-        if (!rxConnected) { rxConnected = true; ShowRxLive(true); Particle.Start(); Particle.Connect(); }   // e.g. 2nd phone batch without a new Connected event
-        rxReceiving = true; rxRate.Reset(); rxStartMs = Environment.TickCount64;
+        if (!rxConnected) { rxConnected = true; ShowRxLive(true); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect(); }   // e.g. 2nd phone batch without a new Connected event
+        rxReceiving = true; rxPanelOk = true; Particle.SetProgress(0); PulseRxPanel(); rxRate.Reset(); rxStartMs = Environment.TickCount64;
         ShowRxResult(false); InstallBtn.Visibility = Visibility.Collapsed;
         RxProgCard.Visibility = Visibility.Visible; RxCancelBtn.Visibility = Visibility.Visible; RxCancelBtn.IsEnabled = true;
         RxStatus.Text = $"Receiving from {(peerName == "" ? "device" : peerName)}…"; SetRxState("Receiving");
@@ -713,7 +725,7 @@ public sealed partial class MainWindow : Window
                 if (rxTotal > 0) RxSize.Text = Fmt(rxTotal);
                 if (rxCount > 0) RxFiles.Text = $"0 of {rxCount}";
                 rxConnected = true;
-                ShowRxLive(true); Particle.Start(); Particle.Connect();   // full-screen particle effect starts when the device connects
+                ShowRxLive(true); rxPanelOk = false; ShowRxPanel(false); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect();   // only the device icon + ripples; details appear when the transfer starts
                 RxStatus.Text = ev.Message; SetRxState("Connected");
                 break;
             case RxState.Receiving:
@@ -737,7 +749,7 @@ public sealed partial class MainWindow : Window
         { ResetRxView(phoneMode ? "" : ev.Message + ". Waiting…"); return; }
 
         bool wasLive = RxLiveView.Visibility == Visibility.Visible;
-        ShowRxLive(true); if (!wasLive) Particle.Start();
+        ShowRxLive(true); rxPanelTimer.Stop(); rxPanelOk = true; ShowRxPanel(true); if (!wasLive) { Particle.Start(); Particle.SetDevice(peerType); }
         int gen = rxGen; string st = stage;
 
         string title, msg, details, glyph; Brush dot; string hist;
@@ -850,6 +862,16 @@ public sealed partial class MainWindow : Window
         await ms.WriteAsync(png.AsBuffer()); ms.Seek(0);
         var bi = new BitmapImage(); await bi.SetSourceAsync(ms);
         QrImg.Source = bi; PhoneCard.Visibility = Visibility.Visible;
+        shareUrl = url; RxLink.Text = url.Replace("http://", "");
+    }
+
+    string shareUrl = "";
+    async void CopyLink_Click(object s, RoutedEventArgs e)
+    {
+        if (shareUrl == "") return;
+        var dp = new Windows.ApplicationModel.DataTransfer.DataPackage(); dp.SetText(shareUrl);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+        CopyLinkText.Text = "Copied ✓"; await Task.Delay(1800); CopyLinkText.Text = "Copy link";
     }
 
     // ---------- setup (first run) ----------

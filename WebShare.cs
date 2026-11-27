@@ -80,6 +80,7 @@ public class WebShare
             if (model.Length <= 1) model = "Android device";
             return (model, ua.Contains("Mobile") ? "Phone" : "Tablet");
         }
+        if (ua.Contains("Windows") || ua.Contains("Macintosh") || ua.Contains("X11") || ua.Contains("CrOS")) return ("Computer", "Laptop / PC");
         return ("Device", "Phone / tablet");
     }
 
