@@ -132,6 +132,34 @@ public sealed partial class MainWindow : Window
         if (current == HomePage || VisualTreeHelper.GetOpenPopupsForXamlRoot(Content.XamlRoot).Count > 0) return;
         e.Handled = true; await GoBackAsync();
     }
+    // Wide (>= 760 px): 2 columns. Narrow: everything stacked in one column. (Replaces the XAML VisualState setters.)
+    bool? narrowLayout;
+    void Root_SizeChanged(object s, SizeChangedEventArgs e) => ApplyLayout(e.NewSize.Width);
+
+    void ApplyLayout(double width)
+    {
+        bool n = width < 760;
+        if (narrowLayout == n) return;
+        narrowLayout = n;
+        PagesHost.Padding = n ? new Thickness(14, 0, 14, 0) : new Thickness(24, 0, 24, 0);
+        var star = new GridLength(1, GridUnitType.Star);
+        HomeCol1.Width = n ? new GridLength(0) : star;
+        ChooseCol1.Width = n ? new GridLength(0) : star;
+        RxCol1.Width = n ? new GridLength(0) : new GridLength(340);
+        PlaceCell(RxCard, n, new Thickness(0, 16, 0, 0), new Thickness(16, 0, 0, 0));
+        PlaceCell(RxPhoneCard, n, new Thickness(0, 16, 0, 0), new Thickness(16, 0, 0, 0));
+        PlaceCell(RxSide, n, new Thickness(0, 12, 0, 0), new Thickness(16, 0, 0, 0));
+        RxStage.Height = n ? 250 : 340;
+        ModeRadio.MaxColumns = n ? 1 : 3;
+    }
+
+    static void PlaceCell(FrameworkElement el, bool narrow, Thickness narrowMargin, Thickness wideMargin)
+    {
+        Grid.SetRow(el, narrow ? 1 : 0);
+        Grid.SetColumn(el, narrow ? 0 : 1);
+        el.Margin = narrow ? narrowMargin : wideMargin;
+    }
+
     async void Root_PointerPressed(object s, PointerRoutedEventArgs e)
     {
         if (e.GetCurrentPoint(RootGrid).Properties.IsXButton1Pressed && current != HomePage) await GoBackAsync();
