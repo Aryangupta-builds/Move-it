@@ -235,7 +235,7 @@
                               <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"/>
                               <TextBlock Text="{x:Bind Detail}" Style="{StaticResource MiCaption}" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
-                            <Button Grid.Column="2" Tag="{x:Bind Path}" Click="RemoveItem_Click" Padding="8,6" CornerRadius="10" ToolTipService.ToolTip="Remove" AutomationProperties.Name="Remove from list"><FontIcon Glyph="&#xE711;" FontSize="12"/></Button>
+                            <Button Grid.Column="2" Tag="{x:Bind FullPath}" Click="RemoveItem_Click" Padding="8,6" CornerRadius="10" ToolTipService.ToolTip="Remove" AutomationProperties.Name="Remove from list"><FontIcon Glyph="&#xE711;" FontSize="12"/></Button>
                           </Grid>
                         </DataTemplate>
                       </ListView.ItemTemplate>

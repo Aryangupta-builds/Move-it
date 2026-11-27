@@ -333,13 +333,13 @@ public sealed partial class MainWindow : Window
         if (!folder) { try { size = new FileInfo(path).Length; } catch { } }
         return new SendItem
         {
-            Path = path, Folder = folder, Size = size,
+            FullPath = path, Folder = folder, Size = size,
             Name = Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : path,
             Detail = folder ? "Folder  •  " + path : Fmt(size) + "  •  " + (Path.GetDirectoryName(path) ?? "")
         };
     }
 
-    void AddItem(string path, bool folder) { if (!items.Any(i => i.Path == path)) items.Add(MakeItem(path, folder)); }
+    void AddItem(string path, bool folder) { if (!items.Any(i => i.FullPath == path)) items.Add(MakeItem(path, folder)); }
 
     async void AddFiles_Click(object s, RoutedEventArgs e)
     {
@@ -363,7 +363,7 @@ public sealed partial class MainWindow : Window
 
     void RemoveItem_Click(object s, RoutedEventArgs e)
     {
-        if (s is Button b && b.Tag is string path) { var it = items.FirstOrDefault(i => i.Path == path); if (it != null) items.Remove(it); }
+        if (s is Button b && b.Tag is string path) { var it = items.FirstOrDefault(i => i.FullPath == path); if (it != null) items.Remove(it); }
     }
 
     void Clear_Click(object s, RoutedEventArgs e) => items.Clear();
@@ -445,7 +445,7 @@ public sealed partial class MainWindow : Window
         TxBar.Value = 0; TxPercent.Text = "0%"; TxFile.Text = ""; txRate.Reset(); txTotal = 0; txFiles = 0;
         SendFx.DeviceLabel = DeviceName; SendFx.Transfer(true);
         txCts = new(); var token = txCts.Token;
-        var snapshot = full ? new List<(string path, bool folder)>() : items.Select(i => (i.Path, i.Folder)).ToList();
+        var snapshot = full ? new List<(string path, bool folder)>() : items.Select(i => (i.FullPath, i.Folder)).ToList();
         var prog = new Progress<Prog>(ShowTx);   // created on the UI thread, so reports arrive on the UI thread (the sender reports every ~200 ms)
         string status = "Failed"; string device = targetName;
         try
