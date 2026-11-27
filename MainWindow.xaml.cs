@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
@@ -33,26 +34,60 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "MoveIt";
-        SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 800));
+        try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico")); } catch { }
+        Drift(B1, 60, 40, 11); Drift(B2, -50, 60, 14); Drift(B3, 70, -50, 17);
         DeviceGrid.ItemsSource = devices;
         ItemList.ItemsSource = itemView;
         HomeInfo.Text = $"This laptop: {DeviceName}  •  {Net.LocalIp()}";
         Closed += (_, _) => StopAll();
         LoadSettings();
+        ShowPage(HomePage);
     }
 
     // ---------- helpers ----------
+    Grid? current, previous;
+
+    void Drift(CompositeTransform t, double dx, double dy, double secs)
+    {
+        var sb = new Storyboard();
+        foreach (var (p, v) in new[] { ("TranslateX", dx), ("TranslateY", dy) })
+        {
+            var an = new DoubleAnimation { From = 0, To = v, Duration = TimeSpan.FromSeconds(secs), AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut } };
+            Storyboard.SetTarget(an, t); Storyboard.SetTargetProperty(an, p); sb.Children.Add(an);
+        }
+        sb.Begin();
+    }
+
     void ShowPage(Grid page)
     {
+        if (current != null && current != page) previous = current;
+        current = page;
         foreach (var g in new[] { HomePage, ScanPage, SendPage, RxPage, SettingsPage })
-            g.Visibility = g == page ? Visibility.Visible : Visibility.Collapsed;
+        {
+            if (g == page) { g.Opacity = 0; g.Visibility = Visibility.Visible; DispatcherQueue.TryEnqueue(() => g.Opacity = 1); }
+            else g.Visibility = Visibility.Collapsed;
+        }
+        BackBtn.Visibility = page == HomePage ? Visibility.Collapsed : Visibility.Visible;
+        SettingsBtn.Visibility = page == SettingsPage ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    // Back works from every page, independent of theme/state
+    void GoBack()
+    {
+        if (current == SettingsPage) { ShowPage(previous ?? HomePage); return; }
+        StopAll(); ShowPage(HomePage);
+    }
+    void Back_Accel(KeyboardAccelerator a, KeyboardAcceleratorInvokedEventArgs e) { if (current != HomePage) { GoBack(); e.Handled = true; } }
+    void Root_PointerPressed(object s, PointerRoutedEventArgs e)
+    {
+        if (e.GetCurrentPoint(RootGrid).Properties.IsXButton1Pressed && current != HomePage) GoBack();
     }
 
     void StopAll()
     {
         scanCts?.Cancel(); txCts?.Cancel();
-        ScanRadar.Stop(); RxRadar.Stop();
+        ScanRadar.Stop(); RxRadar.Stop(); SendFx.Stop();
         rx?.Stop(); rx = null;
     }
 
@@ -107,8 +142,7 @@ public sealed partial class MainWindow : Window
 
     void ApplyTheme(string t)
     {
-        if (Content is FrameworkElement fe)
-            fe.RequestedTheme = t == "Light" ? ElementTheme.Light : t == "Dark" ? ElementTheme.Dark : ElementTheme.Default;
+        RootGrid.RequestedTheme = t == "Light" ? ElementTheme.Light : t == "Dark" ? ElementTheme.Dark : ElementTheme.Default;
     }
 
     void OpenSettings_Click(object s, RoutedEventArgs e) { RefreshSettingsUi(); ShowPage(SettingsPage); }
@@ -149,7 +183,7 @@ public sealed partial class MainWindow : Window
     }
     void Card_Exit(object s, PointerRoutedEventArgs e) { if (s is Border b) b.Scale = Vector3.One; }
 
-    void Back_Click(object s, RoutedEventArgs e) { StopAll(); ShowPage(HomePage); }
+    void Back_Click(object s, RoutedEventArgs e) => GoBack();
 
     void SendCard_Tapped(object s, TappedRoutedEventArgs e) { ShowPage(ScanPage); StartScan(); }
 
@@ -238,7 +272,7 @@ public sealed partial class MainWindow : Window
     void ShowTx(Prog p)
     {
         double pct = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
-        TxRing.Value = pct; TxPercent.Text = $"{pct:0}%";
+        TxBar.Value = pct; TxPercent.Text = $"{pct:0}%";
         TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {Fmt(p.Speed)}/s";
     }
 
@@ -257,7 +291,7 @@ public sealed partial class MainWindow : Window
 
         PickPanel.Visibility = Visibility.Collapsed; SendingPanel.Visibility = Visibility.Visible;
         CancelBtn.Visibility = Visibility.Visible; DoneBtn.Visibility = Visibility.Collapsed;
-        TxRing.Value = 0; TxPercent.Text = "0%";
+        TxBar.Value = 0; TxPercent.Text = "0%"; SendFx.Transfer(true);
         txCts = new(); var snapshot = items.ToList();
         var prog = new Progress<Prog>(ShowTx);
         try
@@ -280,10 +314,10 @@ public sealed partial class MainWindow : Window
             });
             TxStat.Text = "Connecting…";
             await Sender.Send(targetIp, targetCode, files, prog, txCts.Token);
-            TxRing.Value = 100; TxPercent.Text = "✓"; TxStat.Text = $"Done! {files.Count} files sent.";
+            TxBar.Value = 100; TxPercent.Text = "Sent!"; SendFx.Done(); TxStat.Text = $"Done! {files.Count} files sent.";
         }
-        catch (OperationCanceledException) { TxStat.Text = "Cancelled"; }
-        catch (Exception ex) { TxStat.Text = "Error: " + ex.Message; }
+        catch (OperationCanceledException) { TxStat.Text = "Cancelled"; SendFx.Stop(); }
+        catch (Exception ex) { TxStat.Text = "Error: " + ex.Message; SendFx.Stop(); }
         finally { CancelBtn.Visibility = Visibility.Collapsed; DoneBtn.Visibility = Visibility.Visible; }
     }
 
@@ -309,7 +343,8 @@ public sealed partial class MainWindow : Window
     void OnRxLog(string m)
     {
         RxStatus.Text = m;
-        if (m.StartsWith("Connected")) RxProgPanel.Visibility = Visibility.Visible;
+        if (m.StartsWith("Connected")) { RxProgPanel.Visibility = Visibility.Visible; RxRadar.Transfer(false); }
+        if (m.StartsWith("Done")) RxRadar.Done();
         if (m.StartsWith("Done") && cfg.OpenWhenDone)
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dest}\"") { UseShellExecute = true }); } catch { }
