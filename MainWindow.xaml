@@ -9,13 +9,8 @@
     </Grid.KeyboardAccelerators>
     <!-- Narrow/wide layout is applied in code (ApplyLayout in MainWindow.xaml.cs) -->
 
-    <!-- aurora background blobs, softened by the scrim below -->
-    <Grid IsHitTestVisible="False">
-      <Ellipse Width="560" Height="560" Fill="#FF1E6BFF" Opacity="0.55" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-160,-160,0,0"><Ellipse.RenderTransform><CompositeTransform x:Name="B1"/></Ellipse.RenderTransform></Ellipse>
-      <Ellipse Width="480" Height="480" Fill="#FF00D4FF" Opacity="0.4" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-160,0"><Ellipse.RenderTransform><CompositeTransform x:Name="B2"/></Ellipse.RenderTransform></Ellipse>
-      <Ellipse Width="520" Height="520" Fill="#FF7A4DFF" Opacity="0.45" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="120,0,0,-220"><Ellipse.RenderTransform><CompositeTransform x:Name="B3"/></Ellipse.RenderTransform></Ellipse>
-    </Grid>
-    <Border Background="{ThemeResource ScrimBrush}" IsHitTestVisible="False"/>
+    <!-- soft aurora background (Composition, see AuroraBg.xaml.cs) -->
+    <local:AuroraBg x:Name="Aurora"/>
 
     <Grid>
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -341,17 +336,28 @@
                 <TextBlock x:Name="RxTitle" Text="Ready to receive" Style="{StaticResource MiTitle}" HorizontalAlignment="Center" TextAlignment="Center"/>
                 <TextBlock x:Name="RxName" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
               </StackPanel>
-              <Border x:Name="CodeCard" Style="{StaticResource GlassCard}" Padding="24">
-                <StackPanel Spacing="6" HorizontalAlignment="Center">
-                  <TextBlock Text="Pairing code" Style="{StaticResource MiCaption}" HorizontalAlignment="Center"/>
-                  <TextBlock x:Name="CodeText" FontSize="48" FontWeight="Bold" CharacterSpacing="300" HorizontalAlignment="Center" IsTextSelectionEnabled="True"/>
+              <Border x:Name="CodeCard" Style="{StaticResource GlassCard}" CornerRadius="28" Padding="28,26">
+                <StackPanel Spacing="14" HorizontalAlignment="Center">
+                  <TextBlock Text="PAIRING CODE" Style="{StaticResource MiCaption}" CharacterSpacing="140" HorizontalAlignment="Center"/>
+                  <Border CornerRadius="20" Padding="28,10" Background="#14FFFFFF" BorderBrush="{StaticResource QrRing}" BorderThickness="1.5" HorizontalAlignment="Center">
+                    <TextBlock x:Name="CodeText" FontSize="46" FontWeight="Bold" FontFamily="Consolas" CharacterSpacing="320" HorizontalAlignment="Center" IsTextSelectionEnabled="True"/>
+                  </Border>
                   <TextBlock Text="Enter this code on the sending laptop" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
                 </StackPanel>
               </Border>
-              <Border x:Name="PhoneCard" Style="{StaticResource GlassCard}" Padding="24" Visibility="Collapsed">
-                <StackPanel Spacing="16" HorizontalAlignment="Center">
-                  <Border Background="White" CornerRadius="16" Padding="12" HorizontalAlignment="Center"><Image x:Name="QrImg" Width="220" Height="220"/></Border>
-                  <TextBlock Text="Scan with your phone camera" Style="{StaticResource MiSubhead}" HorizontalAlignment="Center" TextAlignment="Center"/>
+              <Border x:Name="PhoneCard" Style="{StaticResource GlassCard}" CornerRadius="30" Padding="30,30,30,24" Visibility="Collapsed">
+                <StackPanel Spacing="20" HorizontalAlignment="Center">
+                  <!-- QR tile: white card inside a thin gradient ring -->
+                  <Border CornerRadius="30" Padding="3" Background="{StaticResource QrRing}" HorizontalAlignment="Center">
+                    <Border Background="White" CornerRadius="27" Padding="18"><Image x:Name="QrImg" Width="220" Height="220"/></Border>
+                  </Border>
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="Scan with your phone camera" Style="{StaticResource MiHeading}" FontSize="18" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    <TextBlock Text="Phone and PC must be on the same WiFi. No app needed." Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                  </StackPanel>
+                  <Border CornerRadius="16" Padding="12,6" Background="#14FFFFFF" HorizontalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="8" Height="8" Fill="{StaticResource WarnBrush}" VerticalAlignment="Center"/><TextBlock Text="Waiting for your phone" FontSize="12" Opacity="0.85"/></StackPanel>
+                  </Border>
                 </StackPanel>
               </Border>
               <TextBlock x:Name="RxStatus" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>

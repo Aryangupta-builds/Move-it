@@ -32,7 +32,6 @@ public sealed partial class MainWindow : Window
         Title = "MoveIt";
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 800));
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico")); } catch { }
-        Drift(B1, 60, 40, 11); Drift(B2, -50, 60, 14); Drift(B3, 70, -50, 17);
         DeviceGrid.ItemsSource = devices;
         ItemList.ItemsSource = items;
         items.CollectionChanged += (_, _) => RefreshItemsUi();
@@ -222,6 +221,7 @@ public sealed partial class MainWindow : Window
         try
         {
             bool dark = RootGrid.ActualTheme == ElementTheme.Dark;
+            Aurora.SetDark(dark);
             Windows.UI.Color Argb(byte a, byte r, byte g, byte b) => Windows.UI.Color.FromArgb(a, r, g, b);
             var fg = dark ? Argb(255, 255, 255, 255) : Argb(255, 20, 20, 20);
             var tb = AppWindow.TitleBar;
@@ -760,8 +760,8 @@ public sealed partial class MainWindow : Window
         }
         else
         {
-            Particle.Dim();
-            if (ev.State == RxState.Cancelled) { hist = "Cancelled"; title = "Transfer cancelled"; glyph = "\uE711"; dot = Res("WarnBrush"); details = "Files that finished before the cancel are kept. The file in progress was deleted."; SetRxState("Cancelled"); }
+            Particle.Error();   // cancelled / failed / disconnected: red stage + red X
+            if (ev.State == RxState.Cancelled) { hist = "Cancelled"; title = "Transfer cancelled"; glyph = "\uE711"; dot = Res("ErrBrush"); details = "Files that finished before the cancel are kept. The file in progress was deleted."; SetRxState("Cancelled"); }
             else if (ev.State == RxState.Disconnected) { hist = "Disconnected"; title = "Device disconnected"; glyph = "\uE7BA"; dot = Res("ErrBrush"); details = "The connection dropped (WiFi off or out of range). Files that finished are kept."; SetRxState("Disconnected"); }
             else { hist = "Failed"; title = "Transfer failed"; glyph = "\uE7BA"; dot = Res("ErrBrush"); details = "Check that both devices are on the same WiFi, then try again."; SetRxState("Failed"); }
             msg = ev.Message; RxStatus.Text = title;
