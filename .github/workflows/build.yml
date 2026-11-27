@@ -18,21 +18,27 @@ jobs:
         run: |
           $proj = (Get-ChildItem -Recurse -Filter MoveIt.csproj | Select-Object -First 1).FullName
           dotnet publish $proj -c Release -r win-x64 -p:Platform=x64 -p:EnableMsixTooling=true -o out
-      - name: Run XAML compiler by hand
+      - name: Diagnose XAML compiler
         if: failure()
+        continue-on-error: true
         shell: pwsh
         run: |
           $exe = Get-ChildItem "$env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk" -Recurse -Filter XamlCompiler.exe | Where-Object { $_.FullName -like '*net472*' } | Select-Object -First 1
           $inp = Get-ChildItem -Recurse -Filter input.json | Where-Object { $_.FullName -like '*obj*win-x64*' } | Select-Object -First 1
-          Write-Host "exe: $($exe.FullName)"
-          Write-Host "input: $($inp.FullName)"
           $out = Join-Path $inp.DirectoryName 'output2.json'
-          & $exe.FullName $inp.FullName $out 2>&1 | Write-Host
+          $start = Get-Date
+          $text = (& $exe.FullName $inp.FullName $out 2>&1 | Out-String)
           Write-Host "exit code: $LASTEXITCODE"
+          Write-Host "---- compiler console output ----"
+          Write-Host $text
+          Write-Host "---- output2.json exists: $(Test-Path $out)"
           if (Test-Path $out) {
             $j = Get-Content $out -Raw | ConvertFrom-Json
-            $j.MSBuildLogEntries | Where-Object { $_.ErrorCode -or $_.Message -notmatch 'perfXC|Compiler Marker' } | ForEach-Object { "$($_.File)($($_.LineNumber),$($_.ColumnNumber)): $($_.ErrorCode) $($_.Message)" }
+            Write-Host "---- last 6 log entries ----"
+            $j.MSBuildLogEntries | Select-Object -Last 6 | ForEach-Object { "$($_.File)($($_.LineNumber)): $($_.ErrorCode) $($_.Message)" }
           }
+          Write-Host "---- Windows event log (crash details) ----"
+          Get-WinEvent -LogName Application -MaxEvents 40 -ErrorAction SilentlyContinue | Where-Object { $_.TimeCreated -ge $start.AddMinutes(-1) -and $_.ProviderName -match 'NET Runtime|Application Error|Windows Error Reporting' } | ForEach-Object { $_.ProviderName; $_.Message; '-----' }
       - uses: actions/upload-artifact@v4
         with:
           name: MoveIt-Windows
