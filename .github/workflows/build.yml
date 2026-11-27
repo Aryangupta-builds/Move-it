@@ -18,6 +18,14 @@ jobs:
         run: |
           $proj = (Get-ChildItem -Recurse -Filter MoveIt.csproj | Select-Object -First 1).FullName
           dotnet publish $proj -c Release -r win-x64 -p:Platform=x64 -p:EnableMsixTooling=true -o out
+      - name: Show XAML compiler error
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path . -Recurse -Filter output.json | Where-Object { $_.FullName -like '*obj*' } | ForEach-Object {
+            Write-Host "=== $($_.FullName)"
+            Get-Content $_.FullName
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: MoveIt-Windows
