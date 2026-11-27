@@ -31,6 +31,8 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "MoveIt";
+        foreach (UIElement el in new UIElement[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, HistoryPage, SettingsPage }) Fx.Fade(el);
+        Fx.Fade(RxBottom, 0.35);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 800));
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico")); } catch { }
         DeviceGrid.ItemsSource = devices;

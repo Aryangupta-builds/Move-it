@@ -1,5 +1,7 @@
 using System.Numerics;
 using Microsoft.UI.Composition;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Hosting;
 using WColor = Windows.UI.Color;
 
 namespace MoveIt;
@@ -7,6 +9,19 @@ namespace MoveIt;
 // Soft light helpers built on the Composition layer (GPU, real radial gradients, no hard edges).
 static class Fx
 {
+    // smooth fade whenever the element's Opacity changes (Composition implicit animation; replaces the XAML OpacityTransition that failed to load)
+    public static void Fade(UIElement e, double secs = 0.25)
+    {
+        try
+        {
+            var v = ElementCompositionPreview.GetElementVisual(e); var c = v.Compositor;
+            var a = c.CreateScalarKeyFrameAnimation(); a.Target = "Opacity";
+            a.InsertExpressionKeyFrame(1f, "this.FinalValue"); a.Duration = TimeSpan.FromSeconds(secs);
+            var col = c.CreateImplicitAnimationCollection(); col["Opacity"] = a; v.ImplicitAnimations = col;
+        }
+        catch { }
+    }
+
     // gaussian-like fall-off: centre -> transparent edge
     static readonly float[] BlobOff = { 0f, .25f, .5f, .75f, 1f };
     static readonly double[] BlobA = { 1, .62, .30, .09, 0 };

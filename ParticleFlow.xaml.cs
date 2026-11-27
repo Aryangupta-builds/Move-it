@@ -114,6 +114,7 @@ public sealed partial class ParticleFlow : UserControl
     public ParticleFlow()
     {
         InitializeComponent();
+        Fx.Fade(DevIcon);
         comp = ElementCompositionPreview.GetElementVisual(this).Compositor;
         root = comp.CreateContainerVisual();
         clipGeo = comp.CreateRoundedRectangleGeometry(); clipGeo.CornerRadius = new Vector2(23, 23);

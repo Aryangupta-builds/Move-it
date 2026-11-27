@@ -39,7 +39,6 @@
       <Grid x:Name="PagesHost" Grid.Row="1" Padding="24,0">
         <!-- SETUP / ONBOARDING (first run) -->
         <Grid x:Name="SetupPage" Visibility="Collapsed">
-          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <Grid MaxWidth="580" HorizontalAlignment="Center" Margin="0,0,0,16">
             <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <ScrollViewer>
@@ -103,7 +102,6 @@
 
         <!-- HOME -->
         <Grid x:Name="HomePage">
-          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640" Spacing="28" Margin="0,8,0,28">
               <StackPanel Spacing="4" HorizontalAlignment="Center">
@@ -153,7 +151,6 @@
 
         <!-- SCAN / device discovery: radar centred in the page; the "nothing found" help appears BELOW in a reserved area (nothing jumps) -->
         <Grid x:Name="ScanPage" Visibility="Collapsed">
-          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto" MinHeight="190"/></Grid.RowDefinitions>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560" Spacing="14" Margin="0,8,0,8">
@@ -214,7 +211,6 @@
 
         <!-- SEND -->
         <Grid x:Name="SendPage" Visibility="Collapsed">
-          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="14" Margin="0,0,0,24">
               <TextBlock x:Name="SendTitle" Style="{StaticResource MiHeading}"/>
@@ -310,7 +306,6 @@
 
         <!-- RECEIVE: choose source -->
         <Grid x:Name="RxChoosePage" Visibility="Collapsed">
-          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640" Spacing="24" Margin="0,8,0,28">
               <StackPanel Spacing="4" HorizontalAlignment="Center">
@@ -347,7 +342,6 @@
 
         <!-- RECEIVE: 1) waiting view (only code or QR)  2) full-screen live view (particles + all transfer data) -->
         <Grid x:Name="RxPage" Visibility="Collapsed">
-          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
 
           <!-- 1) WAITING -->
           <ScrollViewer x:Name="RxWaitView" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
@@ -406,7 +400,6 @@
               </Grid>
               <Border x:Name="RxBottom" VerticalAlignment="Bottom" Margin="16" CornerRadius="18" Padding="18" Background="#D90A1330" BorderBrush="#26FFFFFF" BorderThickness="1" SizeChanged="RxBottom_SizeChanged"
                       Opacity="0" IsHitTestVisible="False" PointerEntered="RxBottom_PointerEntered" PointerExited="RxBottom_PointerExited">
-                <Border.OpacityTransition><ScalarTransition Duration="0:0:0.35"/></Border.OpacityTransition>
                 <StackPanel Spacing="12">
                   <StackPanel x:Name="RxResultHead" Orientation="Horizontal" Spacing="12" Visibility="Collapsed">
                     <Grid Width="44" Height="44"><Ellipse x:Name="RxResDot" Fill="{StaticResource OkBrush}"/><FontIcon x:Name="RxResIcon" Glyph="&#xE73E;" FontSize="20" Foreground="White"/></Grid>
@@ -454,7 +447,6 @@
 
         <!-- HISTORY -->
         <Grid x:Name="HistoryPage" Visibility="Collapsed">
-          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="14" Margin="0,0,0,24">
               <Grid>
@@ -490,7 +482,6 @@
 
         <!-- SETTINGS -->
         <Grid x:Name="SettingsPage" Visibility="Collapsed">
-          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="14" Margin="0,0,0,24">
               <TextBlock Text="Settings" Style="{StaticResource MiTitle}"/>
