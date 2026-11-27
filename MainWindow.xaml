@@ -33,20 +33,80 @@
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
 
       <!-- HEADER: always on top, never covered by page content -->
-      <Grid Grid.Row="0" Padding="16,12" Canvas.ZIndex="10">
+      <Grid x:Name="HeaderBar" Grid.Row="0" Padding="16,10,150,6" Canvas.ZIndex="10" MinHeight="48">
         <Button x:Name="BackBtn" Click="Back_Click" Visibility="Collapsed" HorizontalAlignment="Left" CornerRadius="14" Padding="14,8">
           <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72B;" FontSize="14"/><TextBlock Text="Back"/></StackPanel>
         </Button>
-        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
-          <Border Width="26" Height="26" CornerRadius="7"><Image Source="ms-appx:///Assets/logo.png"/></Border>
-          <TextBlock Text="MoveIt" FontWeight="SemiBold" VerticalAlignment="Center"/>
-        </StackPanel>
         <Button x:Name="SettingsBtn" Click="OpenSettings_Click" HorizontalAlignment="Right" CornerRadius="14" Padding="12,8">
           <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE713;" FontSize="14"/><TextBlock Text="Settings"/></StackPanel>
         </Button>
       </Grid>
 
       <Grid x:Name="PagesHost" Grid.Row="1" Padding="40,0">
+        <!-- SETUP / ONBOARDING (first run) -->
+        <Grid x:Name="SetupPage" Visibility="Collapsed">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
+          <Grid MaxWidth="580" HorizontalAlignment="Center" Margin="0,0,0,16">
+            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <ScrollViewer>
+              <Grid VerticalAlignment="Center" Margin="0,0,0,12">
+                <StackPanel x:Name="Step0" Spacing="12">
+                  <Border Width="96" Height="96" CornerRadius="26" HorizontalAlignment="Center"><Border.Shadow><ThemeShadow/></Border.Shadow><Image Source="ms-appx:///Assets/logo.png"/></Border>
+                  <TextBlock Text="Welcome to MoveIt" Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                  <TextBlock Text="Move everything to your new laptop over your own WiFi. No cables, no cloud, no account." Opacity="0.75" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center"/>
+                  <StackPanel x:Name="S0Host" Spacing="10" Margin="0,8,0,0"/>
+                </StackPanel>
+                <StackPanel x:Name="Step1" Spacing="12" Visibility="Collapsed">
+                  <TextBlock Text="How it works" Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center"/>
+                  <TextBlock Text="Three simple steps, one on each laptop." Opacity="0.75" HorizontalAlignment="Center"/>
+                  <StackPanel x:Name="S1Host" Spacing="10" Margin="0,8,0,0"/>
+                </StackPanel>
+                <StackPanel x:Name="Step2" Spacing="12" Visibility="Collapsed">
+                  <TextBlock Text="What you can send" Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center"/>
+                  <TextBlock Text="Pick a mode on the Send screen." Opacity="0.75" HorizontalAlignment="Center"/>
+                  <StackPanel x:Name="S2Host" Spacing="10" Margin="0,8,0,0"/>
+                </StackPanel>
+                <StackPanel x:Name="Step3" Spacing="12" Visibility="Collapsed">
+                  <TextBlock Text="Allow network access" Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center"/>
+                  <Border Style="{StaticResource GlassCard}">
+                    <StackPanel Spacing="12">
+                      <TextBlock TextWrapping="Wrap" Opacity="0.85" Text="Windows Firewall blocks other devices from reaching apps by default. MoveIt needs access on your private WiFi so the two laptops can find each other and your phone can connect. Everything stays on your local network and nothing goes to the internet."/>
+                      <TextBlock TextWrapping="Wrap" Opacity="0.85" Text="Tap the button, then choose Yes on the Windows prompt. You only do this once."/>
+                      <Button x:Name="FwBtn" Content="Allow network access" Style="{StaticResource AccentButtonStyle}" CornerRadius="12" HorizontalAlignment="Stretch" Height="44" Click="Firewall_Click"/>
+                      <TextBlock x:Name="FwStatus" Opacity="0.85" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+                <StackPanel x:Name="Step4" Spacing="12" Visibility="Collapsed">
+                  <TextBlock Text="Make it yours" Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center"/>
+                  <Border Style="{StaticResource GlassCard}">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="Laptop name" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                      <TextBlock Text="This is the name the other laptop will see." Opacity="0.7" FontSize="12"/>
+                      <TextBox x:Name="SetupName"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Style="{StaticResource GlassCard}">
+                    <StackPanel Spacing="4">
+                      <ToggleSwitch x:Name="SetupMobile" IsOn="True" Header="Receive files from my phone or tablet"/>
+                      <TextBlock Text="Shows a QR code on the Receive screen. You can change this later in Settings." Opacity="0.7" FontSize="12" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </Grid>
+            </ScrollViewer>
+            <StackPanel Grid.Row="1" Spacing="12">
+              <StackPanel x:Name="Dots" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center"/>
+              <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Button x:Name="StepBack" Content="Back" CornerRadius="14" Height="44" MinWidth="90" Click="StepBack_Click"/>
+                <HyperlinkButton x:Name="StepSkip" Grid.Column="1" Content="Skip intro" HorizontalAlignment="Center" Click="StepSkip_Click"/>
+                <Button x:Name="StepNext" Grid.Column="2" Content="Next" Style="{StaticResource AccentButtonStyle}" CornerRadius="14" Height="44" MinWidth="130" Click="StepNext_Click"/>
+              </Grid>
+            </StackPanel>
+          </Grid>
+        </Grid>
+
         <!-- HOME -->
         <Grid x:Name="HomePage">
           <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
@@ -105,7 +165,7 @@
                   </DataTemplate>
                 </GridView.ItemTemplate>
               </GridView>
-              <HyperlinkButton Content="Can't find it? Enter IP address manually" Click="Manual_Click" HorizontalAlignment="Center"/>
+              <HyperlinkButton Content="Can't find it? Enter pairing code or IP address" Click="Manual_Click" HorizontalAlignment="Center"/>
             </StackPanel>
           </ScrollViewer>
         </Grid>
@@ -117,20 +177,25 @@
             <StackPanel MaxWidth="720" HorizontalAlignment="Stretch" Spacing="16" Margin="0,0,0,24">
               <TextBlock x:Name="SendTitle" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap"/>
               <StackPanel x:Name="PickPanel" Spacing="16">
-                <Border Style="{StaticResource GlassCard}">
+                <RadioButtons x:Name="ModeRadio" MaxColumns="3" SelectionChanged="Mode_Changed">
+                  <x:String>Single file</x:String><x:String>Files and folders</x:String><x:String>Complete migration</x:String>
+                </RadioButtons>
+                <Border x:Name="FilesCard" Style="{StaticResource GlassCard}">
                   <StackPanel Spacing="10">
                     <TextBlock Text="Files and folders" Style="{StaticResource BodyStrongTextBlockStyle}"/>
                     <ListView x:Name="ItemList" MaxHeight="150" SelectionMode="None"/>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Button Content="Add files" Click="AddFiles_Click" CornerRadius="12"/>
-                      <Button Content="Add folder" Click="AddFolder_Click" CornerRadius="12"/>
+                      <Button x:Name="AddFolderBtn" Content="Add folder" Click="AddFolder_Click" CornerRadius="12"/>
                       <Button Content="Clear" Click="Clear_Click" CornerRadius="12"/>
                     </StackPanel>
                   </StackPanel>
                 </Border>
-                <Border Style="{StaticResource GlassCard}">
+                <Border x:Name="MigCard" Style="{StaticResource GlassCard}" Visibility="Collapsed">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Full migration (optional)" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                    <TextBlock Text="Complete migration - like setting up a new PC" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                    <TextBlock Text="Copies your user folders and your app list. On the new laptop you can reinstall all apps with one tap." Opacity="0.7" TextWrapping="Wrap" FontSize="12"/>
+                    <HyperlinkButton Content="Select everything" Click="SelectAll_Click" Padding="0"/>
                     <Grid ColumnSpacing="12">
                       <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
                       <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
@@ -172,11 +237,20 @@
                   <TextBlock x:Name="CodeText" FontSize="44" FontWeight="Bold" CharacterSpacing="300" IsTextSelectionEnabled="True"/>
                 </StackPanel>
               </Border>
+              <Border x:Name="PhoneCard" Style="{StaticResource GlassCard}" HorizontalAlignment="Center" Visibility="Collapsed">
+                <StackPanel Spacing="8" HorizontalAlignment="Center">
+                  <TextBlock Text="Send from phone or tablet" Style="{StaticResource BodyStrongTextBlockStyle}" HorizontalAlignment="Center"/>
+                  <Border Background="White" CornerRadius="12" Padding="8" HorizontalAlignment="Center"><Image x:Name="QrImg" Width="170" Height="170"/></Border>
+                  <TextBlock Text="Scan with your phone camera (same WiFi), then pick one or many files" Opacity="0.7" FontSize="12" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="240"/>
+                  <TextBlock x:Name="PhoneUrl" FontSize="12" Opacity="0.8" IsTextSelectionEnabled="True" HorizontalAlignment="Center"/>
+                </StackPanel>
+              </Border>
               <StackPanel x:Name="RxProgPanel" Visibility="Collapsed" Spacing="6" MinWidth="260">
                 <ProgressBar x:Name="RxBar" Maximum="100" CornerRadius="4"/>
                 <TextBlock x:Name="RxStat" HorizontalAlignment="Center" TextAlignment="Center" Opacity="0.8"/>
               </StackPanel>
               <TextBlock x:Name="RxStatus" HorizontalAlignment="Center" TextAlignment="Center" Opacity="0.8" TextWrapping="Wrap"/>
+              <Button x:Name="InstallBtn" Visibility="Collapsed" Content="Install all apps from old laptop" Style="{StaticResource AccentButtonStyle}" CornerRadius="14" HorizontalAlignment="Center" Click="InstallApps_Click"/>
               <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                 <TextBlock Text="Saving to" Opacity="0.7" VerticalAlignment="Center"/>
                 <TextBlock x:Name="DestText" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="260"/>
@@ -213,6 +287,7 @@
                     <Button Grid.Column="1" Content="Change" Click="SettingsFolder_Click" CornerRadius="12"/>
                   </Grid>
                   <ToggleSwitch x:Name="OpenSwitch" Header="Open the folder when receiving finishes" Toggled="Open_Toggled"/>
+                  <ToggleSwitch x:Name="MobileSwitch" Header="Receive files from phone / tablet (QR code)" Toggled="Mobile_Toggled"/>
                   <Button Content="Reset to defaults" Click="Reset_Click" CornerRadius="12"/>
                 </StackPanel>
               </Border>

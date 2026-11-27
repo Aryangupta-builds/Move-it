@@ -15,13 +15,13 @@
         </Path.Fill>
       </Path>
     </Canvas>
-    <Border Width="96" Height="96" CornerRadius="26">
-      <Border.Shadow><ThemeShadow/></Border.Shadow>
-      <Grid>
-        <FontIcon x:Name="LogoFallback" Glyph="&#xE7F8;" FontSize="44" Foreground="#FF2F9BFF"/>
-        <Image Source="ms-appx:///Assets/logo.png" Stretch="UniformToFill" ImageFailed="Logo_Failed"/>
+    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
+      <Grid Width="84" Height="84">
+        <Ellipse><Ellipse.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF2F80ED" Offset="0"/><GradientStop Color="#FF56CCF2" Offset="1"/></LinearGradientBrush></Ellipse.Fill></Ellipse>
+        <FontIcon Glyph="&#xE7F8;" FontSize="40" Foreground="White"/>
       </Grid>
-    </Border>
+      <TextBlock x:Name="NameText" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="150"/>
+    </StackPanel>
     <Grid x:Name="Check" Width="96" Height="96" Visibility="Collapsed" RenderTransformOrigin="0.5,0.5">
       <Grid.RenderTransform><CompositeTransform x:Name="CheckT" ScaleX="0" ScaleY="0"/></Grid.RenderTransform>
       <Ellipse Fill="#FF22C55E"/>

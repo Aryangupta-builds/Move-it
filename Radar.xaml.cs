@@ -24,7 +24,7 @@ public sealed partial class Radar : UserControl
         for (int i = 0; i < 3; i++) Chip(i * 0.6);
     }
 
-    void Logo_Failed(object s, ExceptionRoutedEventArgs e) { }
+    public string DeviceLabel { set => NameText.Text = value; }
 
     void Ring(Storyboard sb, double dur, double begin)
     {
