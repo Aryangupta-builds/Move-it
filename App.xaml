@@ -33,6 +33,9 @@
       <LinearGradientBrush x:Key="StageBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#FF040A1C" Offset="0"/><GradientStop Color="#FF0A1B4D" Offset="1"/>
       </LinearGradientBrush>
+      <LinearGradientBrush x:Key="TileBlue" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF2F80ED" Offset="0"/><GradientStop Color="#FF56CCF2" Offset="1"/></LinearGradientBrush>
+      <LinearGradientBrush x:Key="TileGreen" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF11998E" Offset="0"/><GradientStop Color="#FF38EF7D" Offset="1"/></LinearGradientBrush>
+      <LinearGradientBrush x:Key="TileAmber" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFF59E0B" Offset="0"/><GradientStop Color="#FFFCD34D" Offset="1"/></LinearGradientBrush>
       <SolidColorBrush x:Key="OkBrush" Color="#FF10B981"/>
       <SolidColorBrush x:Key="WarnBrush" Color="#FFF59E0B"/>
       <SolidColorBrush x:Key="ErrBrush" Color="#FFEF4444"/>
@@ -48,8 +51,8 @@
       <Style x:Key="GlassCard" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource GlassBrush}"/>
         <Setter Property="BorderBrush" Value="{ThemeResource GlassStroke}"/>
-        <Setter Property="BorderThickness" Value="1.2"/>
-        <Setter Property="CornerRadius" Value="20"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="18"/>
         <Setter Property="Padding" Value="20"/>
       </Style>
 
@@ -66,11 +69,11 @@
         <Setter Property="Background" Value="{ThemeResource GlassBrush}"/>
         <Setter Property="BorderBrush" Value="{ThemeResource GlassStroke}"/>
         <Setter Property="BorderThickness" Value="1.2"/>
-        <Setter Property="CornerRadius" Value="24"/>
-        <Setter Property="Padding" Value="20"/>
-        <Setter Property="MinHeight" Value="170"/>
+        <Setter Property="CornerRadius" Value="22"/>
+        <Setter Property="Padding" Value="22,16"/>
+        <Setter Property="MinHeight" Value="96"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
-        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="UseSystemFocusVisuals" Value="True"/>
         <Setter Property="Template">
@@ -84,7 +87,7 @@
                       <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1"/><Setter Target="Tf.ScaleY" Value="1"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="PointerOver">
-                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1.025"/><Setter Target="Tf.ScaleY" Value="1.025"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
+                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1.015"/><Setter Target="Tf.ScaleY" Value="1.015"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="Pressed">
                       <VisualState.Setters><Setter Target="Tf.ScaleX" Value="0.97"/><Setter Target="Tf.ScaleY" Value="0.97"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>

@@ -3,7 +3,11 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   IsHitTestVisible="False" IsTabStop="False">
   <Grid x:Name="Host" SizeChanged="Host_SizeChanged">
-    <!-- soft light at the connection point (no rings, no outlines) -->
+    <!-- iOS 17 style light: soft aura that hangs from the top edge (where the "devices touch"), built from stacked ellipses in code -->
+    <Canvas x:Name="Aura" Opacity="0" HorizontalAlignment="Left" VerticalAlignment="Top" RenderTransformOrigin="0.5,0">
+      <Canvas.RenderTransform><CompositeTransform x:Name="AuraT"/></Canvas.RenderTransform>
+    </Canvas>
+    <!-- soft light behind the connection badge -->
     <Grid x:Name="Glow" Width="340" Height="340" HorizontalAlignment="Center" VerticalAlignment="Top" Opacity="0" RenderTransformOrigin="0.5,0.5">
       <Grid.RenderTransform><CompositeTransform x:Name="GlowT" ScaleX="0.7" ScaleY="0.7"/></Grid.RenderTransform>
       <Ellipse Width="340" Height="340" Fill="#0F38BDF8"/>
@@ -11,6 +15,7 @@
       <Ellipse Width="150" Height="150" Fill="#2A67E8F9"/>
       <Ellipse Width="80" Height="80" Fill="#3DBAE6FD"/>
     </Grid>
+    <!-- liquid ripples (pooled, created in code) -->
     <Canvas x:Name="Field"/>
     <!-- connection / completion indicator -->
     <Grid x:Name="Badge" Width="92" Height="92" HorizontalAlignment="Center" VerticalAlignment="Top" Visibility="Collapsed" Opacity="0" RenderTransformOrigin="0.5,0.5">
