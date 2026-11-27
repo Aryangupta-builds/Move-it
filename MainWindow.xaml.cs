@@ -89,6 +89,18 @@ public sealed partial class MainWindow : Window
         BackBtn.Visibility = page == HomePage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
         SettingsBtn.Visibility = page == SettingsPage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
         HistoryBtn.Visibility = page == HistoryPage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
+        UpdateHeaderStage();
+    }
+
+    // while the full-screen particle stage is open it also runs under the header (no seam): header + caption buttons turn light
+    bool stageLive;
+    void UpdateHeaderStage()
+    {
+        bool live = RxPage.Visibility == Visibility.Visible && RxLiveView.Visibility == Visibility.Visible;
+        if (live == stageLive) return;
+        stageLive = live;
+        HeaderBar.RequestedTheme = live ? ElementTheme.Dark : ElementTheme.Default;
+        UpdateCaptionButtons();
     }
 
     bool dialogOpen;
@@ -228,8 +240,9 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            bool dark = RootGrid.ActualTheme == ElementTheme.Dark;
-            Aurora.SetDark(dark);
+            bool appDark = RootGrid.ActualTheme == ElementTheme.Dark;
+            Aurora.SetDark(appDark);
+            bool dark = appDark || stageLive;   // the particle stage is always dark
             Windows.UI.Color Argb(byte a, byte r, byte g, byte b) => Windows.UI.Color.FromArgb(a, r, g, b);
             var fg = dark ? Argb(255, 255, 255, 255) : Argb(255, 20, 20, 20);
             var tb = AppWindow.TitleBar;
@@ -616,6 +629,7 @@ public sealed partial class MainWindow : Window
         RxLiveView.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
         if (live) StopQrSpin(); else if (PhoneCard.Visibility == Visibility.Visible) StartQrSpin();
         if (live) { RxLiveView.UpdateLayout(); UpdateStageCenter(); }
+        UpdateHeaderStage();
     }
 
     void ShowRxResult(bool on)
@@ -637,7 +651,7 @@ public sealed partial class MainWindow : Window
     void UpdateStageCenter()
     {
         double h = RxLiveView.ActualHeight; if (h <= 0) return;
-        double top = 64, bottom = h - 300;                    // ~300 px reserved for the details panel
+        double top = 104, bottom = h - 300;                   // 104 = header (48) + status chips; ~300 px reserved for the details panel
         double center = bottom > top + 160 ? (top + bottom) / 2 : Math.Max(120, h * 0.3);
         Particle.CenterFraction = Math.Clamp(center / h, 0.15, 0.5);
     }
@@ -709,7 +723,7 @@ public sealed partial class MainWindow : Window
     void EnterReceiving()
     {
         if (!rxConnected) { rxConnected = true; ShowRxLive(true); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect(); }   // e.g. 2nd phone batch without a new Connected event
-        rxReceiving = true; rxPanelOk = true; Particle.SetProgress(0); PulseRxPanel(); rxRate.Reset(); rxStartMs = Environment.TickCount64;
+        rxReceiving = true; rxPanelOk = true; Particle.BeginTransfer(); Particle.SetProgress(0); PulseRxPanel(); rxRate.Reset(); rxStartMs = Environment.TickCount64;
         ShowRxResult(false); InstallBtn.Visibility = Visibility.Collapsed;
         RxProgCard.Visibility = Visibility.Visible; RxCancelBtn.Visibility = Visibility.Visible; RxCancelBtn.IsEnabled = true;
         RxStatus.Text = $"Receiving from {(peerName == "" ? "device" : peerName)}…"; SetRxState("Receiving");
@@ -729,7 +743,7 @@ public sealed partial class MainWindow : Window
                 if (rxTotal > 0) RxSize.Text = Fmt(rxTotal);
                 if (rxCount > 0) RxFiles.Text = $"0 of {rxCount}";
                 rxConnected = true;
-                ShowRxLive(true); rxPanelOk = false; ShowRxPanel(false); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect();   // only the device icon + ripples; details appear when the transfer starts
+                ShowRxLive(true); rxPanelOk = false; ShowRxPanel(false); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect();   // only the centred device icon (no particles yet); particles + details start with the transfer
                 RxStatus.Text = ev.Message; SetRxState("Connected");
                 break;
             case RxState.Receiving:

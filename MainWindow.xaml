@@ -396,10 +396,10 @@
           </ScrollViewer>
 
           <!-- 2) LIVE: full-screen particle effect, all data is shown on top of it -->
-          <Border x:Name="RxLiveView" Visibility="Collapsed" RequestedTheme="Dark" CornerRadius="0" Margin="-24,0,-24,0" Background="{StaticResource StageBrush}" BorderThickness="0" SizeChanged="RxLive_SizeChanged">
+          <Border x:Name="RxLiveView" Visibility="Collapsed" RequestedTheme="Dark" CornerRadius="0" Margin="-24,-48,-24,0" Background="{StaticResource StageBrush}" BorderThickness="0" SizeChanged="RxLive_SizeChanged">
             <Grid>
               <local:ParticleFlow x:Name="Particle"/>
-              <Grid VerticalAlignment="Top" Margin="18,16,18,0" ColumnSpacing="10">
+              <Grid VerticalAlignment="Top" Margin="18,56,18,0" ColumnSpacing="10">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <Border CornerRadius="14" Padding="12,6" Background="#26FFFFFF" HorizontalAlignment="Left"><TextBlock x:Name="RxDevice" Text="—" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></Border>
                 <Border Grid.Column="1" CornerRadius="14" Padding="12,6" Background="#26FFFFFF"><TextBlock x:Name="RxStateText" Text="Waiting" FontSize="12" FontWeight="SemiBold"/></Border>
