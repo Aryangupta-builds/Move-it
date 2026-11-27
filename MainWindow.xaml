@@ -1,0 +1,57 @@
+<Window x:Class="MoveIt.MainWindow"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <NavigationView x:Name="Nav" PaneDisplayMode="Top" IsSettingsVisible="False"
+                  IsBackButtonVisible="Collapsed" SelectionChanged="Nav_SelectionChanged">
+    <NavigationView.MenuItems>
+      <NavigationViewItem Content="Receive (new laptop)" Tag="rx" Icon="Download"/>
+      <NavigationViewItem Content="Send (old laptop)" Tag="tx" Icon="Upload"/>
+    </NavigationView.MenuItems>
+    <Grid Padding="32,16">
+      <StackPanel x:Name="RxPanel" Spacing="12">
+        <TextBlock Text="Receive files" Style="{StaticResource TitleTextBlockStyle}"/>
+        <Grid ColumnSpacing="8">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBox x:Name="DestBox" Header="Save to folder"/>
+          <Button Grid.Column="1" Content="Browse" VerticalAlignment="Bottom" Click="BrowseDest_Click"/>
+        </Grid>
+        <Button x:Name="StartRxBtn" Content="Start receiving" Style="{StaticResource AccentButtonStyle}" Click="StartRx_Click"/>
+        <TextBlock x:Name="InfoText" FontSize="32" FontWeight="SemiBold" IsTextSelectionEnabled="True"/>
+        <ProgressBar x:Name="RxBar" Maximum="100"/>
+        <TextBlock x:Name="RxStat" Text="Waiting..."/>
+        <ListView x:Name="LogList" Height="220" BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"/>
+      </StackPanel>
+      <StackPanel x:Name="TxPanel" Spacing="10" Visibility="Collapsed">
+        <TextBlock Text="Send files" Style="{StaticResource TitleTextBlockStyle}"/>
+        <Grid ColumnSpacing="8">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
+          <TextBox x:Name="HostBox" Header="Receiver IP"/>
+          <Button Grid.Column="1" Content="Scan WiFi" VerticalAlignment="Bottom" Click="Scan_Click"/>
+          <TextBox x:Name="CodeBox" Grid.Column="2" Header="Code" MaxLength="6"/>
+        </Grid>
+        <ListView x:Name="ItemList" Height="130" BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="Add files" Click="AddFiles_Click"/>
+          <Button Content="Add folder" Click="AddFolder_Click"/>
+          <Button Content="Clear" Click="Clear_Click"/>
+        </StackPanel>
+        <TextBlock Text="Full migration (optional)" FontWeight="SemiBold"/>
+        <StackPanel Orientation="Horizontal" Spacing="4">
+          <CheckBox x:Name="CbDesktop" Content="Desktop" MinWidth="0"/>
+          <CheckBox x:Name="CbDocuments" Content="Documents" MinWidth="0"/>
+          <CheckBox x:Name="CbDownloads" Content="Downloads" MinWidth="0"/>
+          <CheckBox x:Name="CbPictures" Content="Pictures" MinWidth="0"/>
+          <CheckBox x:Name="CbVideos" Content="Videos" MinWidth="0"/>
+          <CheckBox x:Name="CbMusic" Content="Music" MinWidth="0"/>
+        </StackPanel>
+        <CheckBox x:Name="CbApps" Content="Installed apps list + auto-reinstall script (winget)"/>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="SendBtn" Content="Send" Style="{StaticResource AccentButtonStyle}" Click="Send_Click"/>
+          <Button Content="Cancel" Click="Cancel_Click"/>
+        </StackPanel>
+        <ProgressBar x:Name="TxBar" Maximum="100"/>
+        <TextBlock x:Name="TxStat" Text="Ready"/>
+      </StackPanel>
+    </Grid>
+  </NavigationView>
+</Window>
