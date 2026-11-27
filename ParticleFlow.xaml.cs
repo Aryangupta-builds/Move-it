@@ -91,13 +91,13 @@ public sealed partial class ParticleFlow : UserControl
     {
         if (DevIcon.Visibility == Visibility.Visible && DevIcon.Opacity > 0.5) return;
         DevIcon.Visibility = Visibility.Visible; DevIcon.Opacity = 1;
-        DevT.ScaleX = DevT.ScaleY = 0.6; Scale(DevT, 1, 0.55, new BackEase { Amplitude = 0.6, EasingMode = EasingMode.EaseOut });
+        DevT.ScaleX = DevT.ScaleY = 0.6; ScaleIcon(DevT, 1, 0.55, new BackEase { Amplitude = 0.6, EasingMode = EasingMode.EaseOut });
     }
 
     void HideIcon() { iconSb?.Stop(); DevIcon.Opacity = 0; DevIcon.Visibility = Visibility.Collapsed; DevT.ScaleX = DevT.ScaleY = 1; DevRing.Value = 0; }
 
     Storyboard? iconSb;
-    void Scale(CompositeTransform t, double to, double secs, EasingFunctionBase ease, bool autoReverse = false)
+    void ScaleIcon(CompositeTransform t, double to, double secs, EasingFunctionBase ease, bool autoReverse = false)
     {
         iconSb?.Stop(); var sb = new Storyboard();
         foreach (var prop in new[] { "ScaleX", "ScaleY" })
@@ -109,7 +109,7 @@ public sealed partial class ParticleFlow : UserControl
     }
 
     // a ripple has just been absorbed by the icon
-    void Absorb(double strength) { if (DevIcon.Visibility == Visibility.Visible) Scale(DevT, 1 + 0.05 * strength, 0.16, new SineEase { EasingMode = EasingMode.EaseOut }, true); }
+    void Absorb(double strength) { if (DevIcon.Visibility == Visibility.Visible) ScaleIcon(DevT, 1 + 0.05 * strength, 0.16, new SineEase { EasingMode = EasingMode.EaseOut }, true); }
 
     public ParticleFlow()
     {
