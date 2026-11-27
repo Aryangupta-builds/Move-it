@@ -51,8 +51,6 @@
         <Setter Property="BorderThickness" Value="1.2"/>
         <Setter Property="CornerRadius" Value="20"/>
         <Setter Property="Padding" Value="20"/>
-        <Setter Property="Translation" Value="0,0,12"/>
-        <Setter Property="Shadow"><Setter.Value><ThemeShadow/></Setter.Value></Setter>
       </Style>
 
       <!-- ===== Buttons ===== -->
@@ -83,24 +81,13 @@
                 <VisualStateManager.VisualStateGroups>
                   <VisualStateGroup x:Name="CommonStates">
                     <VisualState x:Name="Normal">
-                      <Storyboard>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.14"/>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.14"/>
-                      </Storyboard>
+                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1"/><Setter Target="Tf.ScaleY" Value="1"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="PointerOver">
-                      <Storyboard>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleX" To="1.025" Duration="0:0:0.14"/>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleY" To="1.025" Duration="0:0:0.14"/>
-                      </Storyboard>
-                      <VisualState.Setters><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
+                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1.025"/><Setter Target="Tf.ScaleY" Value="1.025"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="Pressed">
-                      <Storyboard>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleX" To="0.97" Duration="0:0:0.08"/>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleY" To="0.97" Duration="0:0:0.08"/>
-                      </Storyboard>
-                      <VisualState.Setters><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
+                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="0.97"/><Setter Target="Tf.ScaleY" Value="0.97"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="CardRoot.Opacity" Value="0.5"/></VisualState.Setters></VisualState>
                   </VisualStateGroup>
