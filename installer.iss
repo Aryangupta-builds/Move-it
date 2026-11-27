@@ -1,7 +1,7 @@
 ; Inno Setup script - builds MoveIt-Setup.exe (real installer with Start Menu + Desktop shortcut)
 [Setup]
 AppName=MoveIt
-AppVersion=1.1
+AppVersion=1.2.0
 AppPublisher=Aryan Gupta
 DefaultDirName={autopf}\MoveIt
 DefaultGroupName=MoveIt

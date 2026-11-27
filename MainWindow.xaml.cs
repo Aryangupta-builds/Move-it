@@ -1,13 +1,13 @@
 using System.Collections.ObjectModel;
-using System.Numerics;
 using System.Security.Cryptography;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
-using Windows.Storage.Pickers;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
 using System.Runtime.InteropServices.WindowsRuntime;
 using QRCoder;
@@ -15,26 +15,16 @@ using WinRT.Interop;
 
 namespace MoveIt;
 
-public record DeviceItem(string Ip, string Name);
-
-public class AppSettings
-{
-    public string Theme { get; set; } = "Default";
-    public string DeviceName { get; set; } = "";
-    public string SaveFolder { get; set; } = "";
-    public bool OpenWhenDone { get; set; } = true;
-    public bool SetupDone { get; set; } = false;
-    public bool MobileShare { get; set; } = true;
-}
-
 public sealed partial class MainWindow : Window
 {
-    readonly List<(string path, bool folder)> items = new();
-    readonly ObservableCollection<string> itemView = new();
+    readonly ObservableCollection<SendItem> items = new();
     readonly ObservableCollection<DeviceItem> devices = new();
+    readonly Dictionary<string, int> misses = new();
     string dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "MoveIt_Received");
-    string targetIp = "", targetCode = "";
+    string targetIp = "", targetCode = "", targetName = "";
     WebShare? web; Receiver? rx; CancellationTokenSource? scanCts, txCts;
+    int scanRounds;
+    readonly DispatcherQueueTimer rxTimer;
 
     public MainWindow()
     {
@@ -44,8 +34,10 @@ public sealed partial class MainWindow : Window
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico")); } catch { }
         Drift(B1, 60, 40, 11); Drift(B2, -50, 60, 14); Drift(B3, 70, -50, 17);
         DeviceGrid.ItemsSource = devices;
-        ItemList.ItemsSource = itemView;
-        HomeInfo.Text = $"This laptop: {DeviceName}  •  {Net.LocalIp()}";
+        ItemList.ItemsSource = items;
+        items.CollectionChanged += (_, _) => RefreshItemsUi();
+        VersionText.Text = "v" + AppInfo.Version; AboutVersion.Text = "Version " + AppInfo.Version;
+        rxTimer = DispatcherQueue.CreateTimer(); rxTimer.Interval = TimeSpan.FromMilliseconds(120); rxTimer.Tick += (_, _) => RxTick();
         Closed += (_, _) => StopAll();
         LoadSettings();
         ExtendsContentIntoTitleBar = true; SetTitleBar(HeaderBar);
@@ -55,6 +47,7 @@ public sealed partial class MainWindow : Window
         ModeRadio.SelectedIndex = 1;
         if (!cfg.SetupDone) { SetupName.Text = cfg.DeviceName; SetupName.PlaceholderText = Environment.MachineName; }
         BuildSetup();
+        RefreshItemsUi();
         ShowPage(cfg.SetupDone ? HomePage : SetupPage);
     }
 
@@ -74,51 +67,87 @@ public sealed partial class MainWindow : Window
 
     void ShowPage(Grid page)
     {
-        if (current != null && current != page) previous = current;
+        // Settings / History are side pages: remember the real page we came from, not each other
+        if (current != null && current != page && current != SettingsPage && current != HistoryPage) previous = current;
         current = page;
-        foreach (var g in new[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, SettingsPage })
+        foreach (var g in new[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, HistoryPage, SettingsPage })
         {
             if (g == page) { g.Opacity = 0; g.Visibility = Visibility.Visible; DispatcherQueue.TryEnqueue(() => g.Opacity = 1); }
             else g.Visibility = Visibility.Collapsed;
         }
         BackBtn.Visibility = page == HomePage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
         SettingsBtn.Visibility = page == SettingsPage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
+        HistoryBtn.Visibility = page == HistoryPage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    // Back works from every page, independent of theme/state
-    void GoBack()
+    bool dialogOpen;
+    async Task<bool> Confirm(string title, string text, string yes, string no)
     {
-        if (current == SetupPage) return;
-        if (current == RxPage && cfg.MobileShare) { StopAll(); ShowPage(RxChoosePage); return; }
-        if (current == SettingsPage) { ShowPage(previous ?? HomePage); return; }
-        StopAll(); ShowPage(HomePage);
-    }
-    void Back_Accel(KeyboardAccelerator a, KeyboardAcceleratorInvokedEventArgs e) { if (current != HomePage) { GoBack(); e.Handled = true; } }
-    void Root_PointerPressed(object s, PointerRoutedEventArgs e)
-    {
-        if (e.GetCurrentPoint(RootGrid).Properties.IsXButton1Pressed && current != HomePage) GoBack();
-    }
-
-    void StopAll()
-    {
-        scanCts?.Cancel(); txCts?.Cancel();
-        ScanRadar.Stop(); RxRadar.Stop(); SendFx.Stop();
-        rx?.Stop(); rx = null; web?.Stop(); web = null;
-    }
-
-    T Init<T>(T picker) { InitializeWithWindow.Initialize(picker!, WindowNative.GetWindowHandle(this)); return picker; }
-
-    static string Fmt(double n)
-    {
-        string[] u = { "B", "KB", "MB", "GB", "TB" }; int i = 0;
-        while (n >= 1024 && i < 4) { n /= 1024; i++; }
-        return $"{n:0.#} {u[i]}";
+        if (dialogOpen) return false;
+        dialogOpen = true;
+        try
+        {
+            var r = await new ContentDialog
+            {
+                Title = title, Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap },
+                PrimaryButtonText = yes, CloseButtonText = no, DefaultButton = ContentDialogButton.Close,
+                XamlRoot = Content.XamlRoot, RequestedTheme = RootGrid.RequestedTheme
+            }.ShowAsync();
+            return r == ContentDialogResult.Primary;
+        }
+        finally { dialogOpen = false; }
     }
 
     async Task Msg(string title, string text)
     {
-        await new ContentDialog { Title = title, Content = text, CloseButtonText = "OK", XamlRoot = Content.XamlRoot }.ShowAsync();
+        if (dialogOpen) return;
+        dialogOpen = true;
+        try { await new ContentDialog { Title = title, Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap }, CloseButtonText = "OK", XamlRoot = Content.XamlRoot, RequestedTheme = RootGrid.RequestedTheme }.ShowAsync(); }
+        finally { dialogOpen = false; }
     }
+
+    bool Sending => SendingPanel.Visibility == Visibility.Visible && TxLive.Visibility == Visibility.Visible && txCts != null;
+
+    // Back works from every page. If a transfer is running, ask first, tell the other device, then leave.
+    async Task GoBackAsync()
+    {
+        if (current == SetupPage) return;
+        if (current == SettingsPage || current == HistoryPage) { ShowPage(previous ?? HomePage); return; }
+        if (current == RxPage && rxReceiving)
+        {
+            if (!await Confirm("Cancel this transfer?", "A transfer is in progress. If you leave now it will be cancelled.", "Cancel transfer", "Keep receiving")) return;
+            if (rxReceiving) { CancelRx(); await Task.Delay(450); } // give the cancel message time to reach the sender
+        }
+        else if (current == SendPage && Sending)
+        {
+            if (!await Confirm("Cancel this transfer?", "A transfer is in progress. If you leave now it will be cancelled.", "Cancel transfer", "Keep sending")) return;
+            txCts?.Cancel(); await Task.Delay(450);
+        }
+        if (current == RxPage && cfg.MobileShare) { StopAll(); ShowPage(RxChoosePage); return; }
+        StopAll(); ShowPage(HomePage);
+    }
+    async void Back_Accel(KeyboardAccelerator a, KeyboardAcceleratorInvokedEventArgs e)
+    {
+        // Esc / Alt+Left must not also fire when a dialog or dropdown is open (Esc is meant to close that first)
+        if (current == HomePage || VisualTreeHelper.GetOpenPopupsForXamlRoot(Content.XamlRoot).Count > 0) return;
+        e.Handled = true; await GoBackAsync();
+    }
+    async void Root_PointerPressed(object s, PointerRoutedEventArgs e)
+    {
+        if (e.GetCurrentPoint(RootGrid).Properties.IsXButton1Pressed && current != HomePage) await GoBackAsync();
+    }
+    async void Back_Click(object s, RoutedEventArgs e) => await GoBackAsync();
+
+    void StopAll()
+    {
+        rxGen++; rxTimer.Stop(); rxReceiving = false; rxConnected = false;
+        scanCts?.Cancel(); txCts?.Cancel();
+        ScanRadar.Stop(); Particle.Stop(); SendFx.Stop();
+        rx?.Stop(); rx = null; web?.Stop(); web = null;
+    }
+
+    T Init<T>(T picker) { InitializeWithWindow.Initialize(picker!, WindowNative.GetWindowHandle(this)); return picker; }
+    static string Fmt(double n) => AppInfo.Fmt(n);
 
     // ---------- settings ----------
     AppSettings cfg = new();
@@ -155,10 +184,7 @@ public sealed partial class MainWindow : Window
         loadingSettings = false;
     }
 
-    void ApplyTheme(string t)
-    {
-        RootGrid.RequestedTheme = t == "Light" ? ElementTheme.Light : t == "Dark" ? ElementTheme.Dark : ElementTheme.Default;
-    }
+    void ApplyTheme(string t) => RootGrid.RequestedTheme = t == "Light" ? ElementTheme.Light : t == "Dark" ? ElementTheme.Dark : ElementTheme.Default;
 
     void OpenSettings_Click(object s, RoutedEventArgs e) { RefreshSettingsUi(); ShowPage(SettingsPage); }
 
@@ -178,11 +204,8 @@ public sealed partial class MainWindow : Window
         if (f != null) { dest = f.Path; cfg.SaveFolder = dest; SaveSettings(); RefreshSettingsUi(); }
     }
 
-    void Open_Toggled(object s, RoutedEventArgs e)
-    {
-        if (loadingSettings) return;
-        cfg.OpenWhenDone = OpenSwitch.IsOn; SaveSettings();
-    }
+    void Open_Toggled(object s, RoutedEventArgs e) { if (loadingSettings) return; cfg.OpenWhenDone = OpenSwitch.IsOn; SaveSettings(); }
+    void Mobile_Toggled(object s, RoutedEventArgs e) { if (loadingSettings) return; cfg.MobileShare = MobileSwitch.IsOn; SaveSettings(); }
 
     void Reset_Click(object s, RoutedEventArgs e)
     {
@@ -191,47 +214,67 @@ public sealed partial class MainWindow : Window
         SaveSettings(); ApplyTheme("Default"); RefreshSettingsUi();
     }
 
-    // ---------- home ----------
-    void Card_Enter(object s, PointerRoutedEventArgs e)
+    // ---------- history ----------
+    void OpenHistory_Click(object s, RoutedEventArgs e) { RefreshHistory(); ShowPage(HistoryPage); }
+
+    void RefreshHistory()
     {
-        if (s is Border b) { b.CenterPoint = new Vector3((float)b.ActualWidth / 2, (float)b.ActualHeight / 2, 0); b.Scale = new Vector3(1.05f, 1.05f, 1); }
+        var rows = HistoryStore.Load().Select(HistoryRow.From).ToList();
+        HistList.ItemsSource = rows;
+        HistEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        HistList.Visibility = rows.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        HistClearBtn.IsEnabled = rows.Count > 0;
     }
-    void Card_Exit(object s, PointerRoutedEventArgs e) { if (s is Border b) b.Scale = Vector3.One; }
 
-    void Back_Click(object s, RoutedEventArgs e) => GoBack();
+    async void HistClear_Click(object s, RoutedEventArgs e)
+    {
+        if (await Confirm("Clear history?", "This removes the list of past transfers. Your files are not touched.", "Clear", "Keep")) { HistoryStore.Clear(); RefreshHistory(); }
+    }
 
-    void SendCard_Tapped(object s, TappedRoutedEventArgs e) { ShowPage(ScanPage); StartScan(); }
-
-    void RxCard_Tapped(object s, TappedRoutedEventArgs e) { if (cfg.MobileShare) ShowPage(RxChoosePage); else StartReceiving(false); }
-    void RxFromLaptop_Tapped(object s, TappedRoutedEventArgs e) => StartReceiving(false);
-    void RxFromPhone_Tapped(object s, TappedRoutedEventArgs e) => StartReceiving(true);
+    // ---------- home ----------
+    void SendCard_Click(object s, RoutedEventArgs e) { ShowPage(ScanPage); StartScan(); }
+    void RxCard_Click(object s, RoutedEventArgs e) { if (cfg.MobileShare) ShowPage(RxChoosePage); else StartReceiving(false); }
+    void RxFromLaptop_Click(object s, RoutedEventArgs e) => StartReceiving(false);
+    void RxFromPhone_Click(object s, RoutedEventArgs e) => StartReceiving(true);
 
     // ---------- scan ----------
     async void StartScan()
     {
         scanCts?.Cancel(); scanCts = new(); var ct = scanCts.Token;
-        devices.Clear(); ScanRadar.DeviceLabel = DeviceName; ScanRadar.Start();
-        ScanTitle.Text = "Looking for nearby laptops…";
+        devices.Clear(); misses.Clear(); scanRounds = 0; ScanRadar.DeviceLabel = DeviceName; ScanRadar.Start();
+        UpdateScanUi();
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 var found = await Sender.Scan();
                 if (ct.IsCancellationRequested) break;
+                scanRounds++;
                 foreach (var (ip, name) in found)
+                {
+                    misses[ip] = 0;
                     if (!devices.Any(d => d.Ip == ip)) devices.Add(new DeviceItem(ip, name));
-                ScanTitle.Text = devices.Count == 0 ? "Looking for nearby laptops…" : $"{devices.Count} laptop(s) found. Tap one";
+                }
+                foreach (var d in devices.ToList())   // drop devices that were not seen 3 searches in a row
+                    if (!found.Any(f => f.Ip == d.Ip)) { misses[d.Ip] = misses.GetValueOrDefault(d.Ip) + 1; if (misses[d.Ip] >= 3) devices.Remove(d); }
+                UpdateScanUi();
                 await Task.Delay(1000, ct);
             }
             catch (OperationCanceledException) { break; }
-            catch { await Task.Delay(1500); }
+            catch { scanRounds++; UpdateScanUi(); await Task.Delay(1500); }
         }
     }
 
-    void Device_Click(object s, ItemClickEventArgs e)
+    void UpdateScanUi()
     {
-        if (e.ClickedItem is DeviceItem d) ChooseTarget(d.Ip, d.Name);
+        bool any = devices.Count > 0;
+        ScanTitle.Text = any ? $"{devices.Count} laptop{(devices.Count == 1 ? "" : "s")} found. Tap one" : scanRounds >= 3 ? "No laptops found yet" : "Looking for nearby laptops…";
+        ScanLoading.Visibility = Visibility.Visible;
+        ScanEmpty.Visibility = !any && scanRounds >= 3 ? Visibility.Visible : Visibility.Collapsed;
+        DeviceGrid.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    void Device_Click(object s, ItemClickEventArgs e) { if (e.ClickedItem is DeviceItem d) ChooseTarget(d.Ip, d.Name); }
 
     async void Manual_Click(object s, RoutedEventArgs e)
     {
@@ -241,7 +284,7 @@ public sealed partial class MainWindow : Window
         var dlg = new ContentDialog
         {
             Title = "Connect manually", Content = panel, PrimaryButtonText = "Connect", CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary, XamlRoot = Content.XamlRoot
+            DefaultButton = ContentDialogButton.Primary, XamlRoot = Content.XamlRoot, RequestedTheme = RootGrid.RequestedTheme
         };
         if (await dlg.ShowAsync() != ContentDialogResult.Primary || code.Text.Trim() == "") return;
         string host = ip.Text.Trim(), name = host;
@@ -254,64 +297,133 @@ public sealed partial class MainWindow : Window
         GoSend(host, name, code.Text.Trim());
     }
 
-    void GoSend(string ip, string name, string code)
-    {
-        targetIp = ip; targetCode = code;
-        scanCts?.Cancel(); ScanRadar.Stop();
-        SendTitle.Text = $"Send to {name}";
-        PickPanel.Visibility = Visibility.Visible; SendingPanel.Visibility = Visibility.Collapsed;
-        ShowPage(SendPage);
-    }
-
     async void ChooseTarget(string ip, string name)
     {
         var box = new TextBox { Header = "6-digit code shown on the receiving laptop", MaxLength = 6, PlaceholderText = "000000" };
         var dlg = new ContentDialog
         {
             Title = $"Connect to {name}", Content = box, PrimaryButtonText = "Connect", CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary, XamlRoot = Content.XamlRoot
+            DefaultButton = ContentDialogButton.Primary, XamlRoot = Content.XamlRoot, RequestedTheme = RootGrid.RequestedTheme
         };
         if (await dlg.ShowAsync() != ContentDialogResult.Primary || box.Text.Trim() == "") return;
         GoSend(ip, name, box.Text.Trim());
     }
 
+    void GoSend(string ip, string name, string code)
+    {
+        targetIp = ip; targetCode = code; targetName = name;
+        scanCts?.Cancel(); ScanRadar.Stop();
+        SendTitle.Text = $"Send to {name}";
+        ResetSendView();
+        ShowPage(SendPage);
+    }
+
     // ---------- send ----------
+    void RefreshItemsUi()
+    {
+        ItemsEmpty.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ItemList.Visibility = items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        long total = items.Where(i => !i.Folder).Sum(i => i.Size);
+        SendSummary.Text = items.Count == 0 ? "" : $"{items.Count} item{(items.Count == 1 ? "" : "s")}" + (total > 0 ? $"  •  {Fmt(total)}" : "");
+    }
+
+    static SendItem MakeItem(string path, bool folder)
+    {
+        long size = 0;
+        if (!folder) { try { size = new FileInfo(path).Length; } catch { } }
+        return new SendItem
+        {
+            Path = path, Folder = folder, Size = size,
+            Name = Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : path,
+            Detail = folder ? "Folder  •  " + path : Fmt(size) + "  •  " + (Path.GetDirectoryName(path) ?? "")
+        };
+    }
+
+    void AddItem(string path, bool folder) { if (!items.Any(i => i.Path == path)) items.Add(MakeItem(path, folder)); }
+
     async void AddFiles_Click(object s, RoutedEventArgs e)
     {
         var p = Init(new FileOpenPicker()); p.FileTypeFilter.Add("*");
         if (ModeRadio.SelectedIndex == 0)
         {
             var one = await p.PickSingleFileAsync();
-            if (one != null) { items.Clear(); itemView.Clear(); items.Add((one.Path, false)); itemView.Add(one.Path); }
+            if (one != null) { items.Clear(); AddItem(one.Path, false); }
             return;
         }
         var fs = await p.PickMultipleFilesAsync();
-        if (fs != null) foreach (var f in fs) { items.Add((f.Path, false)); itemView.Add(f.Path); }
+        if (fs != null) foreach (var f in fs) AddItem(f.Path, false);
     }
 
     async void AddFolder_Click(object s, RoutedEventArgs e)
     {
         var p = Init(new FolderPicker()); p.FileTypeFilter.Add("*");
         var f = await p.PickSingleFolderAsync();
-        if (f != null) { items.Add((f.Path, true)); itemView.Add(f.Path + "  [folder]"); }
+        if (f != null) AddItem(f.Path, true);
     }
 
-    void Clear_Click(object s, RoutedEventArgs e) { items.Clear(); itemView.Clear(); }
-    void Cancel_Click(object s, RoutedEventArgs e) => txCts?.Cancel();
-
-    void Done_Click(object s, RoutedEventArgs e)
+    void RemoveItem_Click(object s, RoutedEventArgs e)
     {
-        StopAll(); items.Clear(); itemView.Clear();
-        PickPanel.Visibility = Visibility.Visible; SendingPanel.Visibility = Visibility.Collapsed;
-        ShowPage(HomePage);
+        if (s is Button b && b.Tag is string path) { var it = items.FirstOrDefault(i => i.Path == path); if (it != null) items.Remove(it); }
     }
+
+    void Clear_Click(object s, RoutedEventArgs e) => items.Clear();
+
+    void Mode_Changed(object s, SelectionChangedEventArgs e)
+    {
+        int m = ModeRadio.SelectedIndex;
+        FilesCard.Visibility = m == 2 ? Visibility.Collapsed : Visibility.Visible;
+        MigCard.Visibility = m == 2 ? Visibility.Visible : Visibility.Collapsed;
+        AddFolderBtn.Visibility = m == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (m == 0 && items.Count > 1) { var first = items[0]; items.Clear(); items.Add(first); }
+    }
+
+    void SelectAll_Click(object s, RoutedEventArgs e)
+    {
+        foreach (var c in new[] { CbDesktop, CbDocuments, CbDownloads, CbPictures, CbVideos, CbMusic, CbApps }) c.IsChecked = true;
+    }
+
+    void ResetSendView()
+    {
+        PickPanel.Visibility = Visibility.Visible; SendingPanel.Visibility = Visibility.Collapsed;
+        TxResult.Visibility = Visibility.Collapsed; TxLive.Visibility = Visibility.Visible;
+        SendFx.Stop();
+    }
+
+    readonly RateMeter txRate = new(); long txTotal; int txFiles;
 
     void ShowTx(Prog p)
     {
         double pct = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
+        txTotal = p.Total;
+        double speed = txRate.Update(p.Done, Environment.TickCount64);
         TxBar.Value = pct; TxPercent.Text = $"{pct:0}%";
-        TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {Fmt(p.Speed)}/s";
+        if (!string.IsNullOrEmpty(p.File)) TxFile.Text = p.Count > 1 ? $"{p.File}  ({p.Index} of {p.Count})" : p.File;
+        TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {(speed > 0 ? Fmt(speed) + "/s" : "—")}  •  ETA {AppInfo.Eta(p.Total - p.Done, speed)}";
     }
+
+    async void Cancel_Click(object s, RoutedEventArgs e)
+    {
+        if (txCts == null || CancelBtn.IsEnabled == false) return;
+        if (!await Confirm("Cancel this transfer?", "The receiver keeps files that already finished. The file in progress is discarded.", "Cancel transfer", "Keep sending")) return;
+        CancelBtn.IsEnabled = false; TxStat.Text = "Cancelling…";
+        txCts?.Cancel();
+    }
+
+    void ShowTxResult(string glyph, Brush dot, string title, string msg, string details, bool failed)
+    {
+        TxLive.Visibility = Visibility.Collapsed;
+        TxResIcon.Glyph = glyph; TxResDot.Fill = dot; TxResTitle.Text = title; TxResMsg.Text = msg; TxResDetails.Text = details;
+        TxAgainBtn.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
+        TxDeviceBtn.Visibility = failed ? Visibility.Visible : Visibility.Collapsed;
+        DoneBtn.Content = failed ? "Back to home" : "Done";
+        TxResult.Visibility = Visibility.Visible;
+    }
+
+    Brush Res(string key) => (Brush)Application.Current.Resources[key];
+
+    void TxAgain_Click(object s, RoutedEventArgs e) => ResetSendView();   // back to the file picker, selection is kept
+    void TxChangeDevice_Click(object s, RoutedEventArgs e) { ResetSendView(); ShowPage(ScanPage); StartScan(); }
+    void Done_Click(object s, RoutedEventArgs e) { StopAll(); items.Clear(); ResetSendView(); ShowPage(HomePage); }
 
     async void Send_Click(object s, RoutedEventArgs e)
     {
@@ -325,13 +437,17 @@ public sealed partial class MainWindow : Window
         if (full && CbVideos.IsChecked == true) dirs.Add(("Videos", Environment.GetFolderPath(Environment.SpecialFolder.MyVideos)));
         if (full && CbMusic.IsChecked == true) dirs.Add(("Music", Environment.GetFolderPath(Environment.SpecialFolder.MyMusic)));
         bool apps = full && CbApps.IsChecked == true;
-        if ((full ? false : items.Count == 0) || (full && dirs.Count == 0 && !apps)) { await Msg("Nothing selected", full ? "Tick at least one option." : "Add a file first."); return; }
+        if ((!full && items.Count == 0) || (full && dirs.Count == 0 && !apps)) { await Msg("Nothing selected", full ? "Tick at least one option." : "Add a file first."); return; }
 
         PickPanel.Visibility = Visibility.Collapsed; SendingPanel.Visibility = Visibility.Visible;
-        CancelBtn.Visibility = Visibility.Visible; DoneBtn.Visibility = Visibility.Collapsed;
-        TxBar.Value = 0; TxPercent.Text = "0%"; SendFx.DeviceLabel = DeviceName; SendFx.Transfer(true);
-        txCts = new(); var snapshot = full ? new List<(string path, bool folder)>() : items.ToList();
-        var prog = new Progress<Prog>(ShowTx);
+        TxResult.Visibility = Visibility.Collapsed; TxLive.Visibility = Visibility.Visible;
+        CancelBtn.IsEnabled = true;
+        TxBar.Value = 0; TxPercent.Text = "0%"; TxFile.Text = ""; txRate.Reset(); txTotal = 0; txFiles = 0;
+        SendFx.DeviceLabel = DeviceName; SendFx.Transfer(true);
+        txCts = new(); var token = txCts.Token;
+        var snapshot = full ? new List<(string path, bool folder)>() : items.Select(i => (i.Path, i.Folder)).ToList();
+        var prog = new Progress<Prog>(ShowTx);   // created on the UI thread, so reports arrive on the UI thread (the sender reports every ~200 ms)
+        string status = "Failed"; string device = targetName;
         try
         {
             TxStat.Text = "Collecting files…";
@@ -340,7 +456,7 @@ public sealed partial class MainWindow : Window
                 var l = new List<(string, string)>();
                 foreach (var (path, folder) in snapshot)
                     if (!folder) l.Add((path, Path.GetFileName(path)));
-                    else l.AddRange(Sender.Walk(path, Path.GetFileName(path.TrimEnd('\\'))));
+                    else l.AddRange(Sender.Walk(path, Path.GetFileName(path.TrimEnd('\\', '/'))));
                 foreach (var (name, path) in dirs)
                     if (Directory.Exists(path)) l.AddRange(Sender.Walk(path, "UserData/" + name));
                 if (apps)
@@ -350,66 +466,195 @@ public sealed partial class MainWindow : Window
                 }
                 return l;
             });
+            token.ThrowIfCancellationRequested();
+            txFiles = files.Count;
             TxStat.Text = "Connecting…";
-            await Sender.Send(targetIp, targetCode, files, prog, txCts.Token);
-            TxBar.Value = 100; TxPercent.Text = "Sent!"; SendFx.Done(); TxStat.Text = $"Done! {files.Count} files sent.";
+            await Sender.Send(targetIp, targetCode, DeviceName, files, prog, token);
+            TxBar.Value = 100; TxPercent.Text = "100%"; SendFx.Done(); status = "Completed";
+            ShowTxResult("\uE73E", Res("OkBrush"), "Transfer Complete", $"Sent to {targetName}",
+                $"Files: {txFiles}\nTotal size: {Fmt(txTotal)}", false);
         }
-        catch (OperationCanceledException) { TxStat.Text = "Cancelled"; SendFx.Stop(); }
-        catch (Exception ex) { TxStat.Text = "Error: " + ex.Message; SendFx.Stop(); }
-        finally { CancelBtn.Visibility = Visibility.Collapsed; DoneBtn.Visibility = Visibility.Visible; }
+        catch (RemoteCancelledException)
+        {
+            status = "Cancelled"; SendFx.Stop();
+            ShowTxResult("\uE711", Res("WarnBrush"), "Cancelled", "Cancelled by receiver", "The receiver stopped the transfer. Files that already finished are kept on the receiving laptop.", true);
+        }
+        catch (OperationCanceledException)
+        {
+            status = "Cancelled"; SendFx.Stop();
+            ShowTxResult("\uE711", Res("WarnBrush"), "Cancelled", "You cancelled the transfer", "Files that already finished are kept on the receiving laptop. The file in progress was discarded.", true);
+        }
+        catch (Exception ex)
+        {
+            SendFx.Stop();
+            ShowTxResult("\uE7BA", Res("ErrBrush"), "Transfer failed", ex.Message, ex.Message.Contains("pairing code") ? "Go back and enter the code shown on the receiving laptop." : "Check that both laptops are on the same WiFi and the receiving laptop is still on the Receive screen.", true);
+        }
+        finally
+        {
+            CancelBtn.IsEnabled = true; txCts?.Dispose(); txCts = null;
+            HistoryStore.Add(new HistoryEntry(DateTime.Now, "Sent", device, txFiles, txTotal, status));
+        }
     }
 
     // ---------- receive ----------
-    bool phoneMode, phoneBusy; string phoneFile = ""; long lastUi; System.Diagnostics.Stopwatch phoneSw = new();
+    int rxGen; bool phoneMode, rxConnected, rxReceiving, rxFatal;
+    string peerName = "", peerType = ""; int rxCount; long rxTotal; Prog? rxLatest; long rxStartMs, terminalAt;
+    readonly RateMeter rxRate = new();
+
+    void SetRxState(string text) { RxStateText.Text = text; RxStageText.Text = text; }
 
     void StartReceiving(bool phone)
     {
-        phoneMode = phone;
-        rx?.Stop(); rx = null; web?.Stop(); web = null; phoneBusy = false;
+        StopAll(); int gen = ++rxGen;
+        phoneMode = phone; rxFatal = false;
         var code = RandomNumberGenerator.GetInt32(1000000).ToString("D6");
         CodeText.Text = code; DestText.Text = dest;
         CodeCard.Visibility = phone ? Visibility.Collapsed : Visibility.Visible;
         PhoneCard.Visibility = Visibility.Collapsed;
         RxTitle.Text = phone ? "Receive from phone or tablet" : "Ready to receive";
         RxName.Text = $"Visible as {DeviceName}  •  {Net.LocalIp()}";
-        RxStatus.Text = phone ? "Scan the QR code with your phone camera" : "Waiting for the other laptop…";
-        RxProgPanel.Visibility = Visibility.Collapsed; RxBar.Value = 0; InstallBtn.Visibility = Visibility.Collapsed;
-        RxRadar.DeviceLabel = DeviceName; ShowPage(RxPage); RxRadar.Start();
+        ResetRxView(phone ? "Scan the QR code with your phone camera" : "Waiting for the other laptop…");
+        ShowPage(RxPage);
+        Action<RxEvent> raise = ev => DispatcherQueue.TryEnqueue(() => { if (gen == rxGen) OnRxEvent(ev); });
+        Action<Prog> prog = p => OnRxProg(p, gen);
         if (phone)
         {
-            web = new WebShare(code, dest, DeviceName, OnPhoneProgress, n => DispatcherQueue.TryEnqueue(() =>
-            {
-                RxRadar.Done(); phoneBusy = false; RxBar.Value = 100; RxStatus.Text = $"✓ Received {n}";
-            }));
+            web = new WebShare(code, dest, DeviceName, raise, prog);
             try { web.Start(); ShowQr($"http://{Net.LocalIp()}:{WebShare.Port}/?c={code}"); }
-            catch (Exception ex) { web = null; RxStatus.Text = "Could not start phone sharing: " + ex.Message; }
+            catch (Exception ex) { web = null; RxStatus.Text = "Could not start phone sharing: " + ex.Message; SetRxState("Error"); }
             return;
         }
-        rx = new Receiver(code, dest, m => DispatcherQueue.TryEnqueue(() => OnRxLog(m)),
-            new Progress<Prog>(p =>
-            {
-                RxProgPanel.Visibility = Visibility.Visible;
-                RxBar.Value = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
-                RxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {Fmt(p.Speed)}/s";
-            }), DeviceName);
+        rx = new Receiver(code, dest, raise, prog, DeviceName);
         rx.Start();
     }
 
-    void OnPhoneProgress(string file, long done, long total)
+    void ResetRxView(string status)
     {
-        long now = Environment.TickCount64;
-        if (done < total && done > 0 && now - lastUi < 120) return;
-        lastUi = now;
-        DispatcherQueue.TryEnqueue(() =>
+        rxReceiving = false; rxConnected = false; rxTimer.Stop();
+        Particle.Start();
+        RxResult.Visibility = Visibility.Collapsed; RxProgCard.Visibility = Visibility.Collapsed; RxNote.Visibility = Visibility.Collapsed;
+        RxDevice.Text = RxFile.Text = RxFormat.Text = RxSize.Text = RxFiles.Text = "—";
+        RxBar.Value = 0; RxPercent.Text = "0%"; RxChangeBtn.IsEnabled = true; RxCancelBtn.IsEnabled = true;
+        RxStatus.Text = status; SetRxState("Waiting");
+    }
+
+    // called from background threads: only store the latest snapshot, the UI timer applies it every ~120 ms
+    void OnRxProg(Prog p, int gen)
+    {
+        if (gen != rxGen) return;
+        if (Environment.TickCount64 - terminalAt < 400 && p.Total > 0 && p.Done >= p.Total && !rxReceiving) return; // late final report after Complete
+        Volatile.Write(ref rxLatest, p);
+        DispatcherQueue.TryEnqueue(() => { if (gen == rxGen && !rxTimer.IsRunning) rxTimer.Start(); });
+    }
+
+    void RxTick()
+    {
+        var p = Interlocked.Exchange(ref rxLatest, null);
+        if (p == null) return;
+        if (!rxReceiving) EnterReceiving();
+        double pct = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
+        double speed = rxRate.Update(p.Done, Environment.TickCount64);
+        RxBar.Value = pct; RxPercent.Text = $"{pct:0}%";
+        RxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}";
+        RxSpeed.Text = speed > 0 ? Fmt(speed) + "/s" : "—";
+        RxEta.Text = "ETA " + AppInfo.Eta(p.Total - p.Done, speed);
+        RxSize.Text = Fmt(p.Total);
+        if (!string.IsNullOrEmpty(p.File)) { RxFile.Text = p.File; RxFormat.Text = AppInfo.FormatOf(p.File); }
+        if (p.Count > 0) RxFiles.Text = $"{p.Index} of {p.Count}";
+    }
+
+    void EnterReceiving()
+    {
+        if (!rxConnected) { rxConnected = true; Particle.Start(); Particle.Connect(); }   // e.g. 2nd phone batch without a new Connected event
+        rxReceiving = true; rxRate.Reset(); rxStartMs = Environment.TickCount64;
+        RxResult.Visibility = Visibility.Collapsed; RxProgCard.Visibility = Visibility.Visible;
+        RxCancelBtn.IsEnabled = true; RxChangeBtn.IsEnabled = false;
+        RxStatus.Text = $"Receiving from {(peerName == "" ? "device" : peerName)}…"; SetRxState("Receiving");
+    }
+
+    void OnRxEvent(RxEvent ev)
+    {
+        switch (ev.State)
         {
-            if (!phoneBusy) { phoneBusy = true; RxRadar.Transfer(false); }
-            if (file != phoneFile) { phoneFile = file; phoneSw.Restart(); }
-            double sec = Math.Max(phoneSw.Elapsed.TotalSeconds, 0.25);
-            RxProgPanel.Visibility = Visibility.Visible;
-            RxBar.Value = total == 0 ? 100 : 100.0 * done / total;
-            RxStat.Text = $"{file}\n{Fmt(done)} of {Fmt(total)}  •  {Fmt(done / sec)}/s";
-            RxStatus.Text = "Receiving from phone…";
-        });
+            case RxState.Listening:
+                if (ev.Message != "") { RxNote.Text = ev.Message; RxNote.Visibility = Visibility.Visible; }
+                break;
+            case RxState.Connected:
+                peerName = ev.Device; peerType = ev.DeviceType; rxCount = ev.Count; rxTotal = ev.Total;
+                RxNote.Visibility = Visibility.Collapsed; RxResult.Visibility = Visibility.Collapsed;
+                RxDevice.Text = $"{peerName} • {peerType}";
+                if (rxTotal > 0) RxSize.Text = Fmt(rxTotal);
+                if (rxCount > 0) RxFiles.Text = $"0 of {rxCount}";
+                rxConnected = true; Particle.Connect();
+                RxStatus.Text = ev.Message; SetRxState("Connected");
+                break;
+            case RxState.Receiving:
+                if (!rxReceiving) EnterReceiving();
+                break;
+            case RxState.Complete: case RxState.Cancelled: case RxState.Failed: case RxState.Disconnected:
+                FinishRx(ev); break;
+        }
+    }
+
+    void FinishRx(RxEvent ev)
+    {
+        bool was = rxReceiving;
+        if (ev.Device != "") peerName = ev.Device;
+        rxReceiving = false; rxConnected = false; rxTimer.Stop(); terminalAt = Environment.TickCount64;
+        Interlocked.Exchange(ref rxLatest, null);
+        RxProgCard.Visibility = Visibility.Collapsed; RxChangeBtn.IsEnabled = true;
+        rxFatal = ev.State == RxState.Failed && ev.Message.StartsWith("Cannot listen");
+
+        if (ev.State == RxState.Disconnected && !was)   // phone page closed before sending anything: just go back to waiting
+        { ResetRxView(ev.Message + ". Waiting…"); return; }
+
+        string title, msg, details, glyph; Brush dot; string hist;
+        if (ev.State == RxState.Complete)
+        {
+            Particle.Complete(); hist = "Completed"; glyph = "\uE73E"; dot = Res("OkBrush");
+            var files = ev.Files ?? new List<ReceivedFile>();
+            long size = ev.Total > 0 ? ev.Total : files.Sum(f => f.Size);
+            string name = files.Count == 1 ? files[0].Name : $"{files.Count} files";
+            var exts = files.Select(f => AppInfo.FormatOf(f.Name)).Distinct().ToList();
+            string fmt = files.Count == 1 ? AppInfo.FormatOf(files[0].Name) : exts.Count == 0 ? "—" : string.Join(", ", exts.Take(3)) + (exts.Count > 3 ? "…" : "");
+            title = "Transfer Complete"; msg = ev.Message;
+            details = $"File: {name}\nFormat: {fmt}\nTotal size: {Fmt(size)}\nFrom: {peerName}\nSaved to: {dest}";
+            RxSize.Text = Fmt(size); RxFile.Text = name; RxFormat.Text = fmt;
+            HistoryStore.Add(new HistoryEntry(DateTime.Now, "Received", peerName == "" ? "Device" : peerName, files.Count, size, hist));
+            SetRxState("Complete"); RxStatus.Text = "Complete";
+            RxOpenBtn.Visibility = Visibility.Visible;
+            InstallBtn.Visibility = File.Exists(Path.Combine(dest, "AppList", "apps.json")) ? Visibility.Visible : Visibility.Collapsed;
+            RxAgainBtn.Content = "Receive more";
+            if (cfg.OpenWhenDone) OpenDest();
+        }
+        else
+        {
+            Particle.Dim(); InstallBtn.Visibility = Visibility.Collapsed; RxOpenBtn.Visibility = Visibility.Visible;
+            if (ev.State == RxState.Cancelled) { hist = "Cancelled"; title = "Transfer cancelled"; glyph = "\uE711"; dot = Res("WarnBrush"); details = "Files that finished before the cancel are kept. The file in progress was deleted."; SetRxState("Cancelled"); }
+            else if (ev.State == RxState.Disconnected) { hist = "Disconnected"; title = "Device disconnected"; glyph = "\uE7BA"; dot = Res("ErrBrush"); details = "The connection dropped (WiFi off or out of range). Files that finished are kept."; SetRxState("Disconnected"); }
+            else { hist = "Failed"; title = "Transfer failed"; glyph = "\uE7BA"; dot = Res("ErrBrush"); details = "Check that both devices are on the same WiFi, then try again."; SetRxState("Failed"); }
+            msg = ev.Message; RxStatus.Text = title;
+            RxAgainBtn.Content = "Try again";
+            if (was || ev.State != RxState.Failed || !rxFatal)
+                HistoryStore.Add(new HistoryEntry(DateTime.Now, "Received", peerName == "" ? "Device" : peerName, 0, rxTotal, hist));
+        }
+        RxResIcon.Glyph = glyph; RxResDot.Fill = dot; RxResTitle.Text = title; RxResMsg.Text = msg; RxResDetails.Text = details;
+        RxResult.Visibility = Visibility.Visible;
+    }
+
+    void OpenDest() { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dest}\"") { UseShellExecute = true }); } catch { } }
+
+    void RxOpen_Click(object s, RoutedEventArgs e) => OpenDest();
+    void RxAgain_Click(object s, RoutedEventArgs e) { if (rxFatal) StartReceiving(phoneMode); else ResetRxView(phoneMode ? "Scan the QR code with your phone camera" : "Waiting for the other laptop…"); }
+    async void RxDone_Click(object s, RoutedEventArgs e) { rxReceiving = false; await GoBackAsync(); }
+
+    void CancelRx() { RxCancelBtn.IsEnabled = false; RxStatus.Text = "Cancelling…"; if (phoneMode) web?.CancelTransfer(); else rx?.CancelTransfer(); }
+
+    async void RxCancel_Click(object s, RoutedEventArgs e)
+    {
+        if (!rxReceiving) return;
+        if (!await Confirm("Cancel this transfer?", "Files that already finished are kept. The file in progress is deleted and the sender is told.", "Cancel transfer", "Keep receiving")) return;
+        if (rxReceiving) CancelRx();
     }
 
     async void ShowQr(string url)
@@ -421,19 +666,9 @@ public sealed partial class MainWindow : Window
         QrImg.Source = bi; PhoneUrl.Text = url.Split('?')[0]; PhoneCard.Visibility = Visibility.Visible;
     }
 
-    void OnRxLog(string m)
-    {
-        RxStatus.Text = m;
-        if (m.StartsWith("Connected")) { RxProgPanel.Visibility = Visibility.Visible; RxRadar.Transfer(false); }
-        if (m.StartsWith("Done")) { RxRadar.Done(); if (File.Exists(Path.Combine(dest, "AppList", "apps.json"))) InstallBtn.Visibility = Visibility.Visible; }
-        if (m.StartsWith("Done") && cfg.OpenWhenDone)
-        {
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dest}\"") { UseShellExecute = true }); } catch { }
-        }
-    }
-
     async void ChangeDest_Click(object s, RoutedEventArgs e)
     {
+        if (rxReceiving) return;
         var p = Init(new FolderPicker()); p.FileTypeFilter.Add("*");
         var f = await p.PickSingleFolderAsync();
         if (f != null) { dest = f.Path; cfg.SaveFolder = dest; SaveSettings(); StartReceiving(phoneMode); }
@@ -454,11 +689,6 @@ public sealed partial class MainWindow : Window
         catch { FwStatus.Text = "Cancelled. You can also tap Allow when Windows asks the first time."; }
     }
 
-    void Mobile_Toggled(object s, RoutedEventArgs e)
-    {
-        if (loadingSettings) return;
-        cfg.MobileShare = MobileSwitch.IsOn; SaveSettings();
-    }
 
     // ---------- onboarding wizard ----------
     int step; const int LastStep = 4;
@@ -526,21 +756,6 @@ public sealed partial class MainWindow : Window
         if (step < LastStep) { ShowStep(step + 1); return; }
         cfg.DeviceName = SetupName.Text.Trim(); cfg.MobileShare = SetupMobile.IsOn; cfg.SetupDone = true; SaveSettings();
         RefreshSettingsUi(); ShowPage(HomePage);
-    }
-
-    // ---------- send modes ----------
-    void Mode_Changed(object s, SelectionChangedEventArgs e)
-    {
-        int m = ModeRadio.SelectedIndex;
-        FilesCard.Visibility = m == 2 ? Visibility.Collapsed : Visibility.Visible;
-        MigCard.Visibility = m == 2 ? Visibility.Visible : Visibility.Collapsed;
-        AddFolderBtn.Visibility = m == 0 ? Visibility.Collapsed : Visibility.Visible;
-        if (m == 0 && items.Count > 1) { var first = items[0]; items.Clear(); itemView.Clear(); items.Add(first); itemView.Add(first.path); }
-    }
-
-    void SelectAll_Click(object s, RoutedEventArgs e)
-    {
-        foreach (var c in new[] { CbDesktop, CbDocuments, CbDownloads, CbPictures, CbVideos, CbMusic, CbApps }) c.IsChecked = true;
     }
 
     // ---------- install apps on the new laptop ----------
