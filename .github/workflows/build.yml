@@ -18,13 +18,20 @@ jobs:
         run: |
           $proj = (Get-ChildItem -Recurse -Filter MoveIt.csproj | Select-Object -First 1).FullName
           dotnet publish $proj -c Release -r win-x64 -p:Platform=x64 -p:EnableMsixTooling=true -o out
-      - name: Show XAML compiler error
+      - name: Run XAML compiler by hand
         if: failure()
         shell: pwsh
         run: |
-          Get-ChildItem -Path . -Recurse -Filter output.json | Where-Object { $_.FullName -like '*obj*' } | ForEach-Object {
-            Write-Host "=== $($_.FullName)"
-            Get-Content $_.FullName
+          $exe = Get-ChildItem "$env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk" -Recurse -Filter XamlCompiler.exe | Where-Object { $_.FullName -like '*net472*' } | Select-Object -First 1
+          $inp = Get-ChildItem -Recurse -Filter input.json | Where-Object { $_.FullName -like '*obj*win-x64*' } | Select-Object -First 1
+          Write-Host "exe: $($exe.FullName)"
+          Write-Host "input: $($inp.FullName)"
+          $out = Join-Path $inp.DirectoryName 'output2.json'
+          & $exe.FullName $inp.FullName $out 2>&1 | Write-Host
+          Write-Host "exit code: $LASTEXITCODE"
+          if (Test-Path $out) {
+            $j = Get-Content $out -Raw | ConvertFrom-Json
+            $j.MSBuildLogEntries | Where-Object { $_.ErrorCode -or $_.Message -notmatch 'perfXC|Compiler Marker' } | ForEach-Object { "$($_.File)($($_.LineNumber),$($_.ColumnNumber)): $($_.ErrorCode) $($_.Message)" }
           }
       - uses: actions/upload-artifact@v4
         with:
