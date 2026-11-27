@@ -57,6 +57,34 @@ public sealed partial class ParticleFlow : UserControl
     double glow, glowTarget, dim = 1, dimTarget = 1, flash, hue, interval = 0.14, spawnIn, burstIn, washT, washTarget, kick; int burst;
     bool hooked; Storyboard? badgeSb;
 
+    public ParticleFlow()
+    {
+        InitializeComponent();
+        comp = ElementCompositionPreview.GetElementVisual(this).Compositor;
+        root = comp.CreateContainerVisual();
+        clipGeo = comp.CreateRoundedRectangleGeometry();
+        root.Clip = comp.CreateGeometricClip(clipGeo);
+
+        wash = Fx.Blob(comp, WColor.FromArgb(255, 239, 68, 68), 0.5); wash.Opacity = 0;     // red wash for the error state
+        root.Children.InsertAtBottom(wash);
+
+        for (int i = 0; i < 40; i++)                                                           // particle pool
+        {
+            var v = Fx.Blob(comp, WColor.FromArgb(255, 125, 211, 252), 0.95);
+            v.IsVisible = false; v.Opacity = 0;
+            root.Children.InsertAtTop(v);
+            pool.Add(new Dot { V = v });
+        }
+
+        badgeGlow = Fx.Blob(comp, WColor.FromArgb(255, 125, 211, 252), 0.55);                  // glow behind the badge
+        badgeGlow.Size = new Vector2(340, 340); badgeGlow.Opacity = 0;
+        root.Children.InsertAtTop(badgeGlow);
+
+        ElementCompositionPreview.SetElementChildVisual(FxHost, root);
+        Fx.Fade(DevIcon);
+        Unloaded += (_, _) => Unhook();
+    }
+
     // where the badge sits, as a fraction of the control's height
     double centerFraction = 0.42;
     public double CenterFraction { get => centerFraction; set { centerFraction = value; UpdateCenter(); } }
