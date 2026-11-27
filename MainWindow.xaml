@@ -362,7 +362,13 @@
               <Border x:Name="PhoneCard" Style="{StaticResource GlassCard}" CornerRadius="30" Padding="30,30,30,24" Visibility="Collapsed">
                 <StackPanel Spacing="20" HorizontalAlignment="Center">
                   <!-- QR tile: white card inside a thin gradient ring -->
-                  <Border CornerRadius="30" Padding="3" Background="{StaticResource QrRing}" HorizontalAlignment="Center">
+                  <Border CornerRadius="30" Padding="4" HorizontalAlignment="Center">
+                    <Border.Background>
+                      <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <LinearGradientBrush.RelativeTransform><RotateTransform x:Name="QrSpin" CenterX="0.5" CenterY="0.5"/></LinearGradientBrush.RelativeTransform>
+                        <GradientStop Color="#FF38BDF8" Offset="0"/><GradientStop Color="#FF8B5CF6" Offset="0.33"/><GradientStop Color="#FFEC4899" Offset="0.66"/><GradientStop Color="#FF38BDF8" Offset="1"/>
+                      </LinearGradientBrush>
+                    </Border.Background>
                     <Border Background="White" CornerRadius="27" Padding="18"><Image x:Name="QrImg" Width="220" Height="220"/></Border>
                   </Border>
                   <StackPanel Spacing="4">
@@ -390,7 +396,7 @@
           </ScrollViewer>
 
           <!-- 2) LIVE: full-screen particle effect, all data is shown on top of it -->
-          <Border x:Name="RxLiveView" Visibility="Collapsed" RequestedTheme="Dark" CornerRadius="24" Margin="0,0,0,16" Background="{StaticResource StageBrush}" BorderBrush="#33FFFFFF" BorderThickness="1" SizeChanged="RxLive_SizeChanged">
+          <Border x:Name="RxLiveView" Visibility="Collapsed" RequestedTheme="Dark" CornerRadius="0" Margin="-24,0,-24,0" Background="{StaticResource StageBrush}" BorderThickness="0" SizeChanged="RxLive_SizeChanged">
             <Grid>
               <local:ParticleFlow x:Name="Particle"/>
               <Grid VerticalAlignment="Top" Margin="18,16,18,0" ColumnSpacing="10">
@@ -414,7 +420,7 @@
                     <ProgressBar x:Name="RxBar" Maximum="100" CornerRadius="4"/>
                     <StackPanel Orientation="Horizontal" Spacing="16">
                       <TextBlock x:Name="RxSpeed" Text="—" FontWeight="SemiBold"/>
-                      <TextBlock x:Name="RxEta" Text="ETA —" Opacity="0.8"/>
+                      <TextBlock x:Name="RxEta" Text="Estimated time: —" Opacity="0.8"/>
                     </StackPanel>
                   </StackPanel>
                   <Grid ColumnSpacing="16" RowSpacing="10">

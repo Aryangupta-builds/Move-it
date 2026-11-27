@@ -34,6 +34,7 @@ public sealed partial class MainWindow : Window
         foreach (UIElement el in new UIElement[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, HistoryPage, SettingsPage }) Fx.Fade(el);
         Fx.Fade(RxBottom, 0.35);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 800));
+        (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Maximize();   // always open maximized
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico")); } catch { }
         DeviceGrid.ItemsSource = devices;
         ItemList.ItemsSource = items;
@@ -163,7 +164,7 @@ public sealed partial class MainWindow : Window
 
     void StopAll(bool sync = false)
     {
-        rxGen++; rxTimer.Stop(); rxPanelTimer.Stop(); rxReceiving = false; rxConnected = false;
+        rxGen++; rxTimer.Stop(); rxPanelTimer.Stop(); StopQrSpin(); rxReceiving = false; rxConnected = false;
         scanCts?.Cancel(); txCts?.Cancel();
         ScanRadar.Stop(); Particle.Stop(); SendFx.Stop();
         rx?.Stop(); rx = null; web?.Stop(); web = null;
@@ -454,7 +455,7 @@ public sealed partial class MainWindow : Window
         double speed = txRate.Update(p.Done, Environment.TickCount64);
         TxBar.Value = pct; TxPercent.Text = $"{pct:0}%";
         if (!string.IsNullOrEmpty(p.File)) TxFile.Text = p.Count > 1 ? $"{p.File}  ({p.Index} of {p.Count})" : p.File;
-        TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {(speed > 0 ? Fmt(speed) + "/s" : "—")}  •  ETA {AppInfo.Eta(p.Total - p.Done, speed)}";
+        TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {(speed > 0 ? Fmt(speed) + "/s" : "—")}  •  Estimated time: {AppInfo.Eta(p.Total - p.Done, speed)}";
     }
 
     async void Cancel_Click(object s, RoutedEventArgs e)
@@ -613,6 +614,7 @@ public sealed partial class MainWindow : Window
     {
         RxWaitView.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
         RxLiveView.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
+        if (live) StopQrSpin(); else if (PhoneCard.Visibility == Visibility.Visible) StartQrSpin();
         if (live) { RxLiveView.UpdateLayout(); UpdateStageCenter(); }
     }
 
@@ -698,7 +700,7 @@ public sealed partial class MainWindow : Window
         RxBar.Value = pct; RxPercent.Text = $"{pct:0}%"; Particle.SetProgress(pct);
         RxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}";
         RxSpeed.Text = speed > 0 ? Fmt(speed) + "/s" : "—";
-        RxEta.Text = "ETA " + AppInfo.Eta(p.Total - p.Done, speed);
+        RxEta.Text = "Estimated time: " + AppInfo.Eta(p.Total - p.Done, speed);
         RxSize.Text = Fmt(p.Total);
         if (!string.IsNullOrEmpty(p.File)) { RxFile.Text = p.File; RxFormat.Text = AppInfo.FormatOf(p.File); }
         if (p.Count > 0) RxFiles.Text = $"{p.Index} of {p.Count}";
@@ -863,9 +865,20 @@ public sealed partial class MainWindow : Window
         var ms = new InMemoryRandomAccessStream();
         await ms.WriteAsync(png.AsBuffer()); ms.Seek(0);
         var bi = new BitmapImage(); await bi.SetSourceAsync(ms);
-        QrImg.Source = bi; PhoneCard.Visibility = Visibility.Visible;
+        QrImg.Source = bi; PhoneCard.Visibility = Visibility.Visible; StartQrSpin();
         shareUrl = url; RxLink.Text = url.Replace("http://", "");
     }
+
+    // slowly rotating gradient ring around the QR code
+    Storyboard? qrSb;
+    void StartQrSpin()
+    {
+        if (qrSb != null) return;
+        var a = new DoubleAnimation { From = 0, To = 360, Duration = TimeSpan.FromSeconds(7), RepeatBehavior = RepeatBehavior.Forever, EnableDependentAnimation = true };
+        Storyboard.SetTarget(a, QrSpin); Storyboard.SetTargetProperty(a, "Angle");
+        qrSb = new Storyboard(); qrSb.Children.Add(a); qrSb.Begin();
+    }
+    void StopQrSpin() { qrSb?.Stop(); qrSb = null; }
 
     string shareUrl = "";
     async void CopyLink_Click(object s, RoutedEventArgs e)
