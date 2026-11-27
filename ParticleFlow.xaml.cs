@@ -232,9 +232,9 @@ public sealed partial class ParticleFlow : UserControl
             d.Age += dt; double t = d.Age / d.Life;
             if (t >= 1) { d.Alive = false; d.V.IsVisible = false; kick = Math.Min(0.25, kick + 0.03); continue; }
             anyAlive = true;
-            double e = Math.Pow(t, 1.7), dx = d.Tx - d.X0, dy = d.Ty - d.Y0, len = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
+            double ease = Math.Pow(t, 1.7), dx = d.Tx - d.X0, dy = d.Ty - d.Y0, len = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
             double wob = Math.Sin(d.Ph + t * 5) * d.Wob * (1 - t);
-            double px = d.X0 + dx * e - dy / len * wob, py = d.Y0 + dy * e + dx / len * wob;
+            double px = d.X0 + dx * ease - dy / len * wob, py = d.Y0 + dy * ease + dx / len * wob;
             double sz = d.Size * (1 - 0.6 * t);
             d.V.Size = new Vector2((float)sz, (float)sz); d.V.Offset = new Vector3((float)(px - sz / 2), (float)(py - sz / 2), 0);
             double fade = Math.Min(1, t / 0.12) * (t > 0.82 ? (1 - t) / 0.18 : 1);
