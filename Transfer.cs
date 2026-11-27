@@ -43,8 +43,9 @@ public class Receiver
     readonly string code, dest; readonly Action<string> log; readonly IProgress<Prog> prog;
     readonly CancellationTokenSource cts = new(); TcpListener? l;
 
-    public Receiver(string code, string dest, Action<string> log, IProgress<Prog> prog)
-    { this.code = code; this.dest = dest; this.log = log; this.prog = prog; }
+    readonly string deviceName;
+    public Receiver(string code, string dest, Action<string> log, IProgress<Prog> prog, string? name = null)
+    { this.code = code; this.dest = dest; this.log = log; this.prog = prog; deviceName = string.IsNullOrWhiteSpace(name) ? Environment.MachineName : name; }
 
     public void Start() { _ = Task.Run(Discovery); _ = Task.Run(Serve); }
     public void Stop() { cts.Cancel(); l?.Stop(); }
@@ -58,7 +59,7 @@ public class Receiver
             {
                 var r = await u.ReceiveAsync(cts.Token);
                 if (Encoding.ASCII.GetString(r.Buffer) == "MOVEIT?")
-                { var b = Encoding.UTF8.GetBytes(Environment.MachineName); await u.SendAsync(b, b.Length, r.RemoteEndPoint); }
+                { var b = Encoding.UTF8.GetBytes(deviceName); await u.SendAsync(b, b.Length, r.RemoteEndPoint); }
             }
         }
         catch { }
@@ -135,14 +136,22 @@ public static class Sender
             .Where(f => !f.EndsWith("desktop.ini", StringComparison.OrdinalIgnoreCase))
             .Select(f => (f, prefix + "/" + Path.GetRelativePath(folder, f).Replace('\\', '/')));
 
-    public static async Task<List<string>> Scan()
+    public static async Task<List<(string Ip, string Name)>> Scan()
     {
-        var found = new List<string>();
+        var found = new List<(string Ip, string Name)>();
         using var u = new UdpClient { EnableBroadcast = true };
         var q = Encoding.ASCII.GetBytes("MOVEIT?");
         await u.SendAsync(q, q.Length, new IPEndPoint(IPAddress.Broadcast, Net.DiscPort));
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        try { while (true) { var r = await u.ReceiveAsync(cts.Token); var ip = r.RemoteEndPoint.Address.ToString(); if (!found.Contains(ip)) found.Add(ip); } }
+        try
+        {
+            while (true)
+            {
+                var r = await u.ReceiveAsync(cts.Token);
+                var ip = r.RemoteEndPoint.Address.ToString();
+                if (!found.Any(f => f.Ip == ip)) found.Add((ip, Encoding.UTF8.GetString(r.Buffer)));
+            }
+        }
         catch { }
         return found;
     }
