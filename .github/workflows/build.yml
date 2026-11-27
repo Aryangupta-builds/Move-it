@@ -21,7 +21,14 @@ jobs:
         run: |
           $proj = (Get-ChildItem -Recurse -Filter MoveIt.csproj | Select-Object -First 1).FullName
           dotnet publish $proj -c Release -r win-x64 -p:Platform=x64 --self-contained true -o publish -bl:msbuild.binlog
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host '::warning::dotnet publish failed, trying Visual Studio MSBuild (has the AppxPackage / PRI tasks)'
+            $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+            Write-Host "VS MSBuild: $vs"
+            if (-not $vs) { exit 1 }
+            & $vs $proj /restore /t:Publish /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 /p:SelfContained=true /p:PublishDir="$PWD\publish\" /bl:msbuild-vs.binlog /v:m
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: Diagnose XAML compiler
         if: failure()
         shell: pwsh
@@ -54,6 +61,7 @@ jobs:
           name: xaml-diagnostics
           path: |
             msbuild.binlog
+            msbuild-vs.binlog
             xc_out.txt
             xc_err.txt
             **/obj/x64/Release/**/*.json
