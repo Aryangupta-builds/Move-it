@@ -49,6 +49,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) => StopAll();
         LoadSettings();
         ExtendsContentIntoTitleBar = true; SetTitleBar(HeaderBar);
+        AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
         AppWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
         AppWindow.TitleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
         ModeRadio.SelectedIndex = 1;
@@ -75,7 +76,7 @@ public sealed partial class MainWindow : Window
     {
         if (current != null && current != page) previous = current;
         current = page;
-        foreach (var g in new[] { SetupPage, HomePage, ScanPage, SendPage, RxPage, SettingsPage })
+        foreach (var g in new[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, SettingsPage })
         {
             if (g == page) { g.Opacity = 0; g.Visibility = Visibility.Visible; DispatcherQueue.TryEnqueue(() => g.Opacity = 1); }
             else g.Visibility = Visibility.Collapsed;
@@ -88,6 +89,7 @@ public sealed partial class MainWindow : Window
     void GoBack()
     {
         if (current == SetupPage) return;
+        if (current == RxPage && cfg.MobileShare) { StopAll(); ShowPage(RxChoosePage); return; }
         if (current == SettingsPage) { ShowPage(previous ?? HomePage); return; }
         StopAll(); ShowPage(HomePage);
     }
@@ -200,7 +202,9 @@ public sealed partial class MainWindow : Window
 
     void SendCard_Tapped(object s, TappedRoutedEventArgs e) { ShowPage(ScanPage); StartScan(); }
 
-    void RxCard_Tapped(object s, TappedRoutedEventArgs e) => StartReceiving();
+    void RxCard_Tapped(object s, TappedRoutedEventArgs e) { if (cfg.MobileShare) ShowPage(RxChoosePage); else StartReceiving(false); }
+    void RxFromLaptop_Tapped(object s, TappedRoutedEventArgs e) => StartReceiving(false);
+    void RxFromPhone_Tapped(object s, TappedRoutedEventArgs e) => StartReceiving(true);
 
     // ---------- scan ----------
     async void StartScan()
@@ -356,14 +360,31 @@ public sealed partial class MainWindow : Window
     }
 
     // ---------- receive ----------
-    void StartReceiving()
+    bool phoneMode, phoneBusy; string phoneFile = ""; long lastUi; System.Diagnostics.Stopwatch phoneSw = new();
+
+    void StartReceiving(bool phone)
     {
-        rx?.Stop();
+        phoneMode = phone;
+        rx?.Stop(); rx = null; web?.Stop(); web = null; phoneBusy = false;
         var code = RandomNumberGenerator.GetInt32(1000000).ToString("D6");
         CodeText.Text = code; DestText.Text = dest;
+        CodeCard.Visibility = phone ? Visibility.Collapsed : Visibility.Visible;
+        PhoneCard.Visibility = Visibility.Collapsed;
+        RxTitle.Text = phone ? "Receive from phone or tablet" : "Ready to receive";
         RxName.Text = $"Visible as {DeviceName}  •  {Net.LocalIp()}";
-        RxStatus.Text = "Waiting for the other laptop…"; RxProgPanel.Visibility = Visibility.Collapsed; RxBar.Value = 0;
-        InstallBtn.Visibility = Visibility.Collapsed; RxRadar.DeviceLabel = DeviceName; ShowPage(RxPage); RxRadar.Start();
+        RxStatus.Text = phone ? "Scan the QR code with your phone camera" : "Waiting for the other laptop…";
+        RxProgPanel.Visibility = Visibility.Collapsed; RxBar.Value = 0; InstallBtn.Visibility = Visibility.Collapsed;
+        RxRadar.DeviceLabel = DeviceName; ShowPage(RxPage); RxRadar.Start();
+        if (phone)
+        {
+            web = new WebShare(code, dest, DeviceName, OnPhoneProgress, n => DispatcherQueue.TryEnqueue(() =>
+            {
+                RxRadar.Done(); phoneBusy = false; RxBar.Value = 100; RxStatus.Text = $"✓ Received {n}";
+            }));
+            try { web.Start(); ShowQr($"http://{Net.LocalIp()}:{WebShare.Port}/?c={code}"); }
+            catch (Exception ex) { web = null; RxStatus.Text = "Could not start phone sharing: " + ex.Message; }
+            return;
+        }
         rx = new Receiver(code, dest, m => DispatcherQueue.TryEnqueue(() => OnRxLog(m)),
             new Progress<Prog>(p =>
             {
@@ -372,12 +393,23 @@ public sealed partial class MainWindow : Window
                 RxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {Fmt(p.Speed)}/s";
             }), DeviceName);
         rx.Start();
-        web?.Stop(); web = null; PhoneCard.Visibility = Visibility.Collapsed;
-        if (cfg.MobileShare)
+    }
+
+    void OnPhoneProgress(string file, long done, long total)
+    {
+        long now = Environment.TickCount64;
+        if (done < total && done > 0 && now - lastUi < 120) return;
+        lastUi = now;
+        DispatcherQueue.TryEnqueue(() =>
         {
-            web = new WebShare(code, dest, n => DispatcherQueue.TryEnqueue(() => RxStatus.Text = $"Received from phone: {n}"));
-            try { web.Start(); ShowQr($"http://{Net.LocalIp()}:{WebShare.Port}/?c={code}"); } catch { web = null; }
-        }
+            if (!phoneBusy) { phoneBusy = true; RxRadar.Transfer(false); }
+            if (file != phoneFile) { phoneFile = file; phoneSw.Restart(); }
+            double sec = Math.Max(phoneSw.Elapsed.TotalSeconds, 0.25);
+            RxProgPanel.Visibility = Visibility.Visible;
+            RxBar.Value = total == 0 ? 100 : 100.0 * done / total;
+            RxStat.Text = $"{file}\n{Fmt(done)} of {Fmt(total)}  •  {Fmt(done / sec)}/s";
+            RxStatus.Text = "Receiving from phone…";
+        });
     }
 
     async void ShowQr(string url)
@@ -404,7 +436,7 @@ public sealed partial class MainWindow : Window
     {
         var p = Init(new FolderPicker()); p.FileTypeFilter.Add("*");
         var f = await p.PickSingleFolderAsync();
-        if (f != null) { dest = f.Path; cfg.SaveFolder = dest; SaveSettings(); StartReceiving(); }
+        if (f != null) { dest = f.Path; cfg.SaveFolder = dest; SaveSettings(); StartReceiving(phoneMode); }
     }
 
     // ---------- setup (first run) ----------

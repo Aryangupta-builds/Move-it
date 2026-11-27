@@ -2,7 +2,7 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:MoveIt">
-  <Grid x:Name="RootGrid" Background="{ThemeResource BgBrush}" PointerPressed="Root_PointerPressed">
+  <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden" Background="{ThemeResource BgBrush}" PointerPressed="Root_PointerPressed">
     <Grid.KeyboardAccelerators>
       <KeyboardAccelerator Key="Escape" Invoked="Back_Accel"/>
       <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="Back_Accel"/>
@@ -15,6 +15,8 @@
           <VisualState.Setters>
             <Setter Target="RxCard.(Grid.Row)" Value="1"/>
             <Setter Target="RxCard.(Grid.Column)" Value="0"/>
+            <Setter Target="RxPhoneCard.(Grid.Row)" Value="1"/>
+            <Setter Target="RxPhoneCard.(Grid.Column)" Value="0"/>
             <Setter Target="PagesHost.Padding" Value="16,0"/>
           </VisualState.Setters>
         </VisualState>
@@ -33,12 +35,12 @@
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
 
       <!-- HEADER: always on top, never covered by page content -->
-      <Grid x:Name="HeaderBar" Grid.Row="0" Padding="16,10,150,6" Canvas.ZIndex="10" MinHeight="48">
-        <Button x:Name="BackBtn" Click="Back_Click" Visibility="Collapsed" HorizontalAlignment="Left" CornerRadius="14" Padding="14,8">
+      <Grid x:Name="HeaderBar" Grid.Row="0" Padding="12,0,150,0" Canvas.ZIndex="10" Height="48">
+        <Button x:Name="BackBtn" Click="Back_Click" Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Center" CornerRadius="14" Padding="14,6">
           <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72B;" FontSize="14"/><TextBlock Text="Back"/></StackPanel>
         </Button>
-        <Button x:Name="SettingsBtn" Click="OpenSettings_Click" HorizontalAlignment="Right" CornerRadius="14" Padding="12,8">
-          <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE713;" FontSize="14"/><TextBlock Text="Settings"/></StackPanel>
+        <Button x:Name="SettingsBtn" Click="OpenSettings_Click" HorizontalAlignment="Right" VerticalAlignment="Center" Width="40" Height="36" Padding="0" CornerRadius="18" ToolTipService.ToolTip="Settings">
+          <FontIcon Glyph="&#xE713;" FontSize="16"/>
         </Button>
       </Grid>
 
@@ -223,15 +225,47 @@
           </ScrollViewer>
         </Grid>
 
+        <!-- RECEIVE: choose source -->
+        <Grid x:Name="RxChoosePage" Visibility="Collapsed">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
+          <ScrollViewer>
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="24" Margin="0,10,0,30">
+              <StackPanel Spacing="6" HorizontalAlignment="Center">
+                <TextBlock Text="Receive from where?" Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center"/>
+                <TextBlock Text="Choose where the files are coming from" Opacity="0.7" HorizontalAlignment="Center"/>
+              </StackPanel>
+              <Grid ColumnSpacing="20" RowSpacing="20" HorizontalAlignment="Center">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="230"/><ColumnDefinition Width="230"/></Grid.ColumnDefinitions>
+                <Border x:Name="RxLapCard" Height="200" Style="{StaticResource GlassCard}" CornerRadius="30" Tapped="RxFromLaptop_Tapped" PointerEntered="Card_Enter" PointerExited="Card_Exit">
+                  <Border.ScaleTransition><Vector3Transition Duration="0:0:0.18"/></Border.ScaleTransition>
+                  <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                    <Grid Width="76" Height="76"><Ellipse><Ellipse.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF2F80ED" Offset="0"/><GradientStop Color="#FF56CCF2" Offset="1"/></LinearGradientBrush></Ellipse.Fill></Ellipse><FontIcon Glyph="&#xE7F8;" FontSize="34" Foreground="White"/></Grid>
+                    <TextBlock Text="From a laptop" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Pair with a code" FontSize="13" Opacity="0.65" HorizontalAlignment="Center"/>
+                  </StackPanel>
+                </Border>
+                <Border x:Name="RxPhoneCard" Grid.Column="1" Height="200" Style="{StaticResource GlassCard}" CornerRadius="30" Tapped="RxFromPhone_Tapped" PointerEntered="Card_Enter" PointerExited="Card_Exit">
+                  <Border.ScaleTransition><Vector3Transition Duration="0:0:0.18"/></Border.ScaleTransition>
+                  <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                    <Grid Width="76" Height="76"><Ellipse><Ellipse.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFF59E0B" Offset="0"/><GradientStop Color="#FFFCD34D" Offset="1"/></LinearGradientBrush></Ellipse.Fill></Ellipse><FontIcon Glyph="&#xE8EA;" FontSize="34" Foreground="White"/></Grid>
+                    <TextBlock Text="From phone / tablet" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    <TextBlock Text="Scan a QR code" FontSize="13" Opacity="0.65" HorizontalAlignment="Center"/>
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+
         <!-- RECEIVE -->
         <Grid x:Name="RxPage" Visibility="Collapsed">
           <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer>
             <StackPanel Spacing="12" HorizontalAlignment="Center" Margin="0,0,0,24" MaxWidth="560">
               <Viewbox MaxWidth="300" MaxHeight="300"><local:Radar x:Name="RxRadar"/></Viewbox>
-              <TextBlock Text="Ready to receive" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center"/>
+              <TextBlock x:Name="RxTitle" Text="Ready to receive" TextAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center"/>
               <TextBlock x:Name="RxName" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
-              <Border Style="{StaticResource GlassCard}" HorizontalAlignment="Center">
+              <Border x:Name="CodeCard" Style="{StaticResource GlassCard}" HorizontalAlignment="Center">
                 <StackPanel Spacing="4" HorizontalAlignment="Center">
                   <TextBlock Text="Pairing code" Style="{StaticResource CaptionTextBlockStyle}" Opacity="0.7" HorizontalAlignment="Center"/>
                   <TextBlock x:Name="CodeText" FontSize="44" FontWeight="Bold" CharacterSpacing="300" IsTextSelectionEnabled="True"/>
