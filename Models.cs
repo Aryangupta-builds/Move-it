@@ -14,12 +14,15 @@ public class AppSettings
     public bool OpenWhenDone { get; set; } = true;
     public bool SetupDone { get; set; } = false;
     public bool MobileShare { get; set; } = true;
+    public bool AllowPlain { get; set; } = true;     // spec 26: allow unencrypted TCP with an older MoveIt that cannot encrypt
+    public bool TrayEnabled { get; set; } = false;   // off by default: closing the window exits the app
+    public string UpdateUrl { get; set; } = "https://api.github.com/repos/Aryangupta-builds/Move-it/releases/latest";   // only contacted when the user presses "Check for updates"; clear it to disable
 }
 
 // One row in the Send file list
 public sealed class SendItem
 {
-    public string Path { get; init; } = "";
+    public string FullPath { get; init; } = "";
     public bool Folder { get; init; }
     public string Name { get; init; } = "";
     public string Detail { get; init; } = "";
@@ -41,7 +44,7 @@ public sealed class HistoryRow
     public static HistoryRow From(HistoryEntry e)
     {
         var col = e.Status == "Completed" ? Windows.UI.Color.FromArgb(255, 16, 185, 129)
-                : e.Status == "Cancelled" ? Windows.UI.Color.FromArgb(255, 245, 158, 11)
+                : e.Status == "Cancelled" || e.Status == "Partial" ? Windows.UI.Color.FromArgb(255, 245, 158, 11)
                 : Windows.UI.Color.FromArgb(255, 239, 68, 68);
         bool sent = e.Direction == "Sent";
         return new HistoryRow
@@ -58,7 +61,7 @@ public static class AppInfo
 {
     public static string Version
     {
-        get { var v = Assembly.GetExecutingAssembly().GetName().Version; return v == null ? "1.2.0" : $"{v.Major}.{v.Minor}.{v.Build}"; }
+        get { var v = Assembly.GetExecutingAssembly().GetName().Version; return v == null ? "1.4.0" : $"{v.Major}.{v.Minor}.{v.Build}"; }
     }
 
     public static string Fmt(double n)

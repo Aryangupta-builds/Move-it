@@ -80,6 +80,7 @@ public class WebShare
             if (model.Length <= 1) model = "Android device";
             return (model, ua.Contains("Mobile") ? "Phone" : "Tablet");
         }
+        if (ua.Contains("Windows") || ua.Contains("Macintosh") || ua.Contains("X11") || ua.Contains("CrOS")) return ("Computer", "Laptop / PC");
         return ("Device", "Phone / tablet");
     }
 
@@ -190,7 +191,7 @@ public class WebShare
                     int failed = (int)Num(h, "x-failed");
                     if (!b.Cancelled && files.Count + failed > 0)
                         raise(new(RxState.Complete, failed == 0 ? $"{files.Count} file(s) saved" : $"{files.Count} saved, {failed} failed", peerName, peerType, files.Count, files.Sum(f => f.Size), files));
-                    await Reply(s, 200, "application/json", "{\"ok\":true}"); return;
+                    await Reply(s, 200, "application/json", b.Cancelled ? "{\"ok\":true,\"cancel\":true}" : "{\"ok\":true}"); return;
                 }
                 if (route == "/up" && h.TryGetValue("x-name", out var nm)) { await Upload(s, buf, len, end, h, batchId, nm, ua); return; }
                 await Reply(s, 404, "text/plain", "Not found");
@@ -276,7 +277,17 @@ public class WebShare
 html,body{margin:0;min-height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--txt);background:var(--bg);min-height:100dvh;display:flex;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
 .bg{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
-.bg i{position:absolute;border-radius:50%;filter:blur(90px);opacity:.35}
+.bg i{position:absolute;border-radius:50%;filter:blur(90px);opacity:.35;transition:background 1s}
+.bg .glow{left:50%;top:-34vh;width:150vw;height:70vh;transform:translateX(-50%);background:radial-gradient(closest-side,var(--g1),var(--g2) 55%,transparent 100%);filter:blur(24px);opacity:.55;transition:opacity .6s}
+body{--g1:rgba(56,189,248,.65);--g2:rgba(99,102,241,.3)}
+@keyframes breathe{50%{opacity:.95;transform:translateX(-50%) scale(1.07)}}
+body.st-busy .glow{animation:breathe 2.4s ease-in-out infinite}
+body.st-done{--g1:rgba(52,211,153,.7);--g2:rgba(16,185,129,.28)}
+body.st-done .b1{background:#059669}body.st-done .b2{background:#14b8a6}
+body.st-bad{--g1:rgba(248,113,113,.8);--g2:rgba(220,38,38,.38)}
+body.st-bad .b1{background:#dc2626}body.st-bad .b2{background:#f97316}
+body.st-bad .card{border-color:rgba(248,113,113,.45);box-shadow:0 0 70px rgba(220,38,38,.2)}
+.card{transition:border-color .5s,box-shadow .5s}
 .b1{width:340px;height:340px;background:#1e6bff;top:-120px;left:-100px}.b2{width:300px;height:300px;background:#06b6d4;bottom:-100px;right:-100px}
 main{position:relative;z-index:1;width:100%;max-width:520px;display:flex;flex-direction:column;gap:14px}
 header{display:flex;align-items:center;gap:12px;padding:4px 2px}
@@ -287,6 +298,7 @@ header h1{margin:0;font-size:20px;font-weight:650;letter-spacing:.2px;flex:1}
 .chip.on{color:var(--txt)}.chip.on i{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .chip.err i{background:var(--bad)}.chip.wait i{background:#fbbf24;animation:pulse 1.2s infinite}
 @keyframes pulse{50%{opacity:.35}}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}header,.card,.list{position:relative;z-index:1}
 .card{border-radius:24px;background:var(--card);border:1px solid var(--line);padding:20px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
 .to{font-size:14px;color:var(--dim);text-align:center}.to b{color:var(--txt)}
 .dial{position:relative;width:176px;height:176px;margin:14px auto 10px;display:flex;align-items:center;justify-content:center}
@@ -320,8 +332,9 @@ input[type=text]{width:100%;padding:14px;border-radius:16px;border:1px solid var
 @media(min-width:700px){body{align-items:center}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style></head><body>
-<div class="bg"><i class="b1"></i><i class="b2"></i></div>
+<div class="bg"><i class="glow"></i><i class="b1"></i><i class="b2"></i></div>
 <main>
+<canvas id="fx" aria-hidden="true"></canvas>
 <header><img class="logo" src="/logo.png" alt="" onerror="this.style.display='none'"><h1>MoveIt</h1><div class="chip wait" id="chip"><i></i><span id="chipT">Connecting…</span></div></header>
 <section class="card" id="card">
 <div class="to">Send to <b id="pcn">%%NAME%%</b></div>
@@ -342,13 +355,29 @@ input[type=text]{width:100%;padding:14px;border-radius:16px;border:1px solid var
 <script>
 const $=id=>document.getElementById(id);
 const q=new URLSearchParams(location.search);let code=q.get('c')||'';
-const C=326.7;let batch='',xhr=null,busy=false,connected=false,cancelled=false,remoteCancel=false,fails=0,poll=null,pcName=document.getElementById('pcn').textContent;
+const C=326.7;let batch='',xhr=null,busy=false,connected=false,cancelled=false,remoteCancel=false,lost=false,fails=0,poll=null,pcName=document.getElementById('pcn').textContent;
 const fmt=n=>{const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<4){n/=1024;i++}return n.toFixed(i?1:0)+' '+u[i]};
 const fmtT=s=>!isFinite(s)||s<0?'–':s<60?Math.ceil(s)+'s':s<3600?Math.floor(s/60)+'m '+Math.ceil(s%60)+'s':Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m';
 const ext=n=>{const i=n.lastIndexOf('.');return i>0&&i<n.length-1?n.slice(i+1,i+6).toUpperCase():'FILE'};
+// Particles: leave the dial only while bytes really move (spawn needs a progress event in the last 1.5 s). Cancel = burst that falls away. Off if the device asks for reduced motion.
+const FX=(()=>{const c=$('fx'),g=c.getContext('2d'),red=matchMedia('(prefers-reduced-motion: reduce)').matches;let P=[],raf=0,lastB=0,last=0,acc=0;
+function size(){const d=devicePixelRatio||1;c.width=innerWidth*d;c.height=innerHeight*d;g.setTransform(d,0,0,d,0,0)}addEventListener('resize',size);size();
+function org(){const r=$('dial').getBoundingClientRect();return[r.left+r.width/2,r.top+r.height/2]}
+function add(a,sp,life,fall){if(P.length>90)return;const[x,y]=org();P.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,age:0,life,sz:2+Math.random()*3.5,h:190+Math.random()*70,fall})}
+function loop(t){const dt=Math.min((t-last)/1000||0,.05);last=t;g.clearRect(0,0,innerWidth,innerHeight);
+ if(busy&&!cancelled&&Date.now()-lastB<1500){acc+=dt;while(acc>.045){acc-=.045;add(-Math.PI/2+(Math.random()-.5)*2.4,110+Math.random()*150,1.4+Math.random(),false)}}
+ P=P.filter(p=>(p.age+=dt)<p.life);
+ for(const p of P){if(p.fall)p.vy+=520*dt;else{p.vx*=1-.8*dt;p.vy*=1-.8*dt}p.x+=p.vx*dt;p.y+=p.vy*dt;const k=1-p.age/p.life;g.globalAlpha=Math.max(0,k)*.85;g.fillStyle='hsl('+(p.fall?0:p.h)+',85%,'+(p.fall?62:68)+'%)';g.beginPath();g.arc(p.x,p.y,p.sz*(p.fall?1:.5+.5*k),0,6.283);g.fill()}
+ g.globalAlpha=1;
+ if(P.length||(busy&&!cancelled))raf=requestAnimationFrame(loop);else{raf=0;g.clearRect(0,0,innerWidth,innerHeight)}}
+function run(){if(!raf&&!red){last=performance.now();raf=requestAnimationFrame(loop)}}
+return{feed(){if(red)return;lastB=Date.now();run()},
+ cancel(){if(red)return;for(let i=0;i<46;i++)add(Math.random()*6.283,90+Math.random()*230,1+Math.random()*.9,true);run()},
+ stop(){lastB=0}}})();
 function chip(t,cls){$('chip').className='chip '+cls;$('chipT').textContent=t}
 function msg(t,cls){$('msg').textContent=t;$('msg').className='msg '+(cls||'')}
-function dial(cls){$('dial').className='dial '+(cls||'')}
+function dial(cls){if(cls=='bad')FX.cancel();else if(cls!='busy')FX.stop();$('dial').className='dial '+(cls||'');document.body.className=cls?'st-'+cls:'';
+ $('ic').innerHTML=cls=='bad'?'<path d="M6 6l12 12M18 6L6 18"/>':cls=='done'?'<path d="M5 12.5l4.5 4.5L19 7.5"/>':'<path d="M12 19V5M5 12l7-7 7 7"/>'}
 function ring(p){$('arc').style.strokeDashoffset=C*(1-Math.min(100,p)/100);$('pct').textContent=Math.round(p)+'%'}
 function idle(){busy=false;$('cancel').classList.add('hide');$('btn').classList.toggle('off',!connected);$('btn').classList.remove('hide')}
 async function hello(){
@@ -361,7 +390,7 @@ function start(){clearInterval(poll);poll=setInterval(async()=>{
   if(!r.ok){throw 0}
   if(fails>=3){chip('Connected to '+pcName,'on');connected=true;if(!busy)idle()}fails=0;
   if(j.cancel&&busy&&!cancelled){remoteCancel=true;doCancel(true)}
- }catch(e){if(++fails>=3){connected=false;chip('Connection lost','err');if(busy){if(xhr)xhr.abort();msg('Connection lost. The transfer was interrupted.','bad')}else{$('btn').classList.add('off')}}}},1500)}
+ }catch(e){if(++fails>=3){connected=false;chip('Connection lost','err');if(busy){lost=true;if(xhr)xhr.abort();msg('Connection lost. The transfer was interrupted.','bad')}else{$('btn').classList.add('off')}}}},1500)}
 if(!code){$('code').classList.remove('hide');chip('Enter code','wait');msg('Enter the 6-digit pairing code shown on the PC.');$('code').oninput=e=>{code=e.target.value.trim();if(code.length==6)hello()}}else hello();
 function up(f,i,n,off,tot,row,onp){return new Promise(r=>{const x=new XMLHttpRequest();xhr=x;x.open('POST','/up');
  [['X-Code',code],['X-Name',encodeURIComponent(f.name)],['X-Batch',batch],['X-Index',i+1],['X-Count',n],['X-Offset',off],['X-BatchTotal',tot]].forEach(([k,v])=>x.setRequestHeader(k,v));
@@ -374,24 +403,26 @@ $('cancel').onclick=()=>$('sheet').classList.remove('hide');
 $('keep').onclick=()=>$('sheet').classList.add('hide');
 $('yes').onclick=()=>{$('sheet').classList.add('hide');if(busy)doCancel(false)};
 $('pick').onchange=async e=>{const fs=[...e.target.files];e.target.value='';if(!fs.length||!connected||busy)return;
- busy=true;cancelled=false;remoteCancel=false;batch=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+ busy=true;cancelled=false;remoteCancel=false;lost=false;batch=Date.now().toString(36)+Math.random().toString(36).slice(2,6);
  $('btn').classList.add('hide');$('cancel').classList.remove('hide');$('stats').classList.remove('hide');$('list').innerHTML='';dial('busy');ring(0);msg('Sending…');
  const total=fs.reduce((a,f)=>a+f.size,0)||1;let sent=0,okc=0,bad=0,consec=0,sp=0,lt=Date.now(),ld=0;const t0=Date.now();
  const rows=fs.map(f=>{const d=document.createElement('div');d.className='f';d.innerHTML='<span></span><small></small><div class="bar"><i></i></div>';d.firstChild.textContent=f.name;d.querySelector('small').textContent=ext(f.name)+' • '+fmt(f.size);$('list').appendChild(d);return d});
- const set=(done,i)=>{const p=100*done/total;ring(p);const now=Date.now();if(now-lt>400){const inst=(done-ld)/((now-lt)/1000);sp=sp?sp*.7+inst*.3:inst;lt=now;ld=done}
+ const set=(done,i)=>{const p=100*done/total;ring(p);if(done>0)FX.feed();const now=Date.now();if(now-lt>400){const inst=(done-ld)/((now-lt)/1000);sp=sp?sp*.7+inst*.3:inst;lt=now;ld=done}
   const f=fs[Math.min(i,fs.length-1)];$('fn').textContent=f.name;$('fm').innerHTML='<span class="badge">'+ext(f.name)+'</span>'+fmt(f.size);
   $('sSp').textContent=fmt(sp||done/Math.max((now-t0)/1000,.3))+'/s';$('sEta').textContent=fmtT((total-done)/(sp||done/Math.max((now-t0)/1000,.3)));$('sCnt').textContent=(i+1)+' / '+fs.length};
  set(0,0);
  for(let i=0;i<fs.length;i++){
   const res=await up(fs[i],i,fs.length,sent,total,rows[i],l=>set(sent+l,i));
+  if(res=='cancel'&&!cancelled&&!lost){cancelled=true;remoteCancel=true}
   if(res=='cancel'||cancelled){rows[i].querySelector('span').textContent='✗ '+fs[i].name;break}
   if(res=='ok'){okc++;consec=0;rows[i].querySelector('span').textContent='✓ '+fs[i].name;rows[i].querySelector('i').style.width='100%'}
   else{bad++;consec++;rows[i].querySelector('span').textContent='✗ '+fs[i].name;if(consec>=2&&!connected)break}
   sent+=fs[i].size;set(sent,i)}
  xhr=null;$('stats').classList.add('hide');
- if(cancelled){dial('bad');ring(0);$('fn').textContent='Cancelled';$('fm').textContent=okc?okc+' file(s) arrived before cancelling':'Nothing was transferred';msg(remoteCancel?'Cancelled by the PC':'Transfer cancelled')}
+ if(!cancelled&&connected&&!lost){try{const rr=await fetch('/done',{method:'POST',headers:{'X-Code':code,'X-Batch':batch,'X-Failed':bad}});const jj=await rr.json();if(jj.cancel){cancelled=true;remoteCancel=true}}catch(e){}}
+ if(cancelled){try{navigator.vibrate&&navigator.vibrate([70,50,70])}catch(e){}dial('bad');ring(0);$('fn').textContent='Cancelled';$('fm').textContent=okc?okc+' file(s) arrived before cancelling':'Nothing was transferred';msg(remoteCancel?'Cancelled by the PC':'Transfer cancelled','bad')}
  else if(!connected){dial('bad');$('fn').textContent='Interrupted';$('fm').textContent=okc+' of '+fs.length+' files arrived';msg('Connection lost. Reconnect and send again.','bad')}
- else{try{await fetch('/done',{method:'POST',headers:{'X-Code':code,'X-Batch':batch,'X-Failed':bad}})}catch(e){}
+ else{
   if(bad==0){dial('done');ring(100);$('fn').textContent='Transfer complete';$('fm').textContent=fs.length+(fs.length>1?' files':' file')+' • '+fmt(total);msg('Sent to '+pcName,'ok')}
   else{dial('bad');$('fn').textContent='Finished with errors';$('fm').textContent=okc+' of '+fs.length+' sent';msg(bad+' file(s) failed. Please try those again.','bad')}}
  $('btn').textContent='Send more files';idle()};

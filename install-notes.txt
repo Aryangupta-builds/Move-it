@@ -1,0 +1,9 @@
+MOVE IT - installation information
+
+- Transfers go directly between your devices on your local network.
+- Administrator install: adds a Windows Firewall rule for MOVE IT (private networks).
+- "Only for me" install: no firewall rule is added. Allow access when Windows asks.
+- Starting with Windows is off unless you tick it.
+- Settings and history are stored in %LOCALAPPDATA%\MoveIt.
+  Uninstall keeps them unless you choose to delete them.
+- This installer is not code-signed, so Windows SmartScreen may show a warning.

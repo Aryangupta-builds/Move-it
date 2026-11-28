@@ -5,26 +5,17 @@ namespace MoveIt;
 public partial class App : Application
 {
     Window? w;
+    static Mutex? single;   // held for the whole run: a second launch finds it and just brings the first window forward
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowW(string? cls, string title);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
 
-    public App()
-    {
-        // Log every kind of crash to %LocalAppData%\MoveIt\crash.log so a silent exit never happens again
-        UnhandledException += (_, e) => Log("XAML unhandled", e.Exception);
-        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log("AppDomain unhandled", e.ExceptionObject as Exception);
-        TaskScheduler.UnobservedTaskException += (_, e) => Log("Unobserved task", e.Exception);
-        try { InitializeComponent(); }
-        catch (Exception ex) { Fatal("Could not load the app resources", ex); throw; }
-    }
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int MessageBoxW(IntPtr h, string text, string caption, uint type);
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
-    {
-        try { w = new MainWindow(); w.Activate(); }
-        catch (Exception ex) { Fatal("MoveIt could not open its window", ex); }
-    }
+    static readonly string LogPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MoveIt", "crash.log");
 
-    static string LogPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MoveIt", "crash.log");
-
-    public static void Log(string where, Exception? ex)
+    // Writes the error to %LOCALAPPDATA%\MoveIt\crash.log (a WinUI app that fails at start-up otherwise closes silently)
+    static void Log(string where, Exception? ex)
     {
         try
         {
@@ -34,12 +25,31 @@ public partial class App : Application
         catch { }
     }
 
-    static void Fatal(string title, Exception ex)
+    static void Fail(string where, Exception ex)
     {
-        Log(title, ex);
-        try { MessageBoxW(IntPtr.Zero, $"{title}.\n\n{ex.Message}\n\nDetails were saved to:\n{LogPath}", "MoveIt", 0x10); } catch { }
+        Log(where, ex);
+        try { MessageBoxW(IntPtr.Zero, $"MoveIt could not start.\n\n{where}\n{ex.GetType().Name}: {ex.Message}\n\nDetails: {LogPath}", "MoveIt", 0x10); } catch { }
     }
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
+    public App()
+    {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log("AppDomain.UnhandledException", e.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) => Log("UnobservedTaskException", e.Exception);
+        UnhandledException += (_, e) => Log("Application.UnhandledException", e.Exception);
+        try { InitializeComponent(); }
+        catch (Exception ex) { Fail("App.xaml failed to load", ex); throw; }
+    }
+
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    {
+        single = new Mutex(true, @"Local\MoveIt.SingleInstance", out bool first);
+        if (!first)
+        {
+            var h = FindWindowW(null, "MoveIt");
+            if (h != IntPtr.Zero) { ShowWindow(h, 9); SetForegroundWindow(h); }   // 9 = SW_RESTORE
+            Environment.Exit(0);
+        }
+        try { w = new MainWindow(); if (!(Environment.GetCommandLineArgs().Contains("--startup") && w.StartHiddenOk)) w.Activate(); }   // Windows startup with the tray on: stay in the tray, no window
+        catch (Exception ex) { Fail("Main window failed to open", ex); Environment.Exit(1); }
+    }
 }

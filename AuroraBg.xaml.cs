@@ -13,7 +13,10 @@ public sealed partial class AuroraBg : UserControl
     readonly Compositor comp;
     readonly ContainerVisual root;
     readonly List<(SpriteVisual V, double Ax, double Ay, double Size, float Dx, float Dy, double Secs)> blobs = new();
-    bool dark = true; double w = 1, h = 1;
+    bool dark = true, paused; double w = 1, h = 1;
+    static readonly Windows.UI.ViewManagement.UISettings? ui = MakeUi();
+    static Windows.UI.ViewManagement.UISettings? MakeUi() { try { return new Windows.UI.ViewManagement.UISettings(); } catch { return null; } }   // a failure here must never stop the app from starting
+    static bool Still { get { try { return ui != null && !ui.AnimationsEnabled; } catch { return false; } } }   // Windows "animation effects" off = no drifting clouds
 
     public AuroraBg()
     {
@@ -23,6 +26,9 @@ public sealed partial class AuroraBg : UserControl
         ElementCompositionPreview.SetElementChildVisual(Host, root);
         Build();
     }
+
+    // Called when the window loses/gets focus: a decorative background must not use the GPU while nobody looks at it.
+    public void SetPaused(bool p) { if (p == paused) return; paused = p; if (p) foreach (var b in blobs) b.V.StopAnimation("Offset"); else Layout(); }
 
     public void SetDark(bool d) { if (d == dark) return; dark = d; Build(); }
 
@@ -62,6 +68,7 @@ public sealed partial class AuroraBg : UserControl
             var p0 = new Vector3((float)(b.Ax * w - sz / 2), (float)(b.Ay * h - sz / 2), 0);
             b.V.Size = new Vector2(sz, sz); b.V.Offset = p0;
             b.V.StopAnimation("Offset");
+            if (paused || Still) continue;
             var an = comp.CreateVector3KeyFrameAnimation();
             var ease = comp.CreateCubicBezierEasingFunction(new Vector2(.45f, 0), new Vector2(.55f, 1));
             an.InsertKeyFrame(0, p0); an.InsertKeyFrame(.5f, p0 + new Vector3(b.Dx, b.Dy, 0), ease); an.InsertKeyFrame(1, p0, ease);

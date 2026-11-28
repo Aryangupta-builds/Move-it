@@ -9,9 +9,9 @@
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Default">
           <LinearGradientBrush x:Key="BgBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#FF050816" Offset="0"/><GradientStop Color="#FF0A1A4A" Offset="1"/>
+            <GradientStop Color="#FF03050E" Offset="0"/><GradientStop Color="#FF081029" Offset="1"/>
           </LinearGradientBrush>
-          <AcrylicBrush x:Key="GlassBrush" TintColor="#FFFFFFFF" TintOpacity="0.07" FallbackColor="#33FFFFFF"/>
+          <LinearGradientBrush x:Key="GlassBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#1FFFFFFF" Offset="0"/><GradientStop Color="#0DFFFFFF" Offset="1"/></LinearGradientBrush>
           <AcrylicBrush x:Key="ScrimBrush" TintColor="#FF050816" TintOpacity="0.15" FallbackColor="#00000000"/>
           <LinearGradientBrush x:Key="GlassStroke" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#66FFFFFF" Offset="0"/><GradientStop Color="#14FFFFFF" Offset="1"/>
@@ -21,7 +21,7 @@
           <LinearGradientBrush x:Key="BgBrush" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#FFEEF5FF" Offset="0"/><GradientStop Color="#FFCFE2FF" Offset="1"/>
           </LinearGradientBrush>
-          <AcrylicBrush x:Key="GlassBrush" TintColor="#FFFFFFFF" TintOpacity="0.5" FallbackColor="#B3FFFFFF"/>
+          <LinearGradientBrush x:Key="GlassBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#E6FFFFFF" Offset="0"/><GradientStop Color="#A6FFFFFF" Offset="1"/></LinearGradientBrush>
           <AcrylicBrush x:Key="ScrimBrush" TintColor="#FFFFFFFF" TintOpacity="0.2" FallbackColor="#00FFFFFF"/>
           <LinearGradientBrush x:Key="GlassStroke" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#EEFFFFFF" Offset="0"/><GradientStop Color="#55FFFFFF" Offset="1"/>
@@ -33,6 +33,10 @@
       <LinearGradientBrush x:Key="StageBrush" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#FF040A1C" Offset="0"/><GradientStop Color="#FF0A1B4D" Offset="1"/>
       </LinearGradientBrush>
+      <LinearGradientBrush x:Key="QrRing" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF38BDF8" Offset="0"/><GradientStop Color="#FF8B5CF6" Offset="0.55"/><GradientStop Color="#FFEC4899" Offset="1"/></LinearGradientBrush>
+      <LinearGradientBrush x:Key="TileBlue" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF2F80ED" Offset="0"/><GradientStop Color="#FF56CCF2" Offset="1"/></LinearGradientBrush>
+      <LinearGradientBrush x:Key="TileGreen" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF11998E" Offset="0"/><GradientStop Color="#FF38EF7D" Offset="1"/></LinearGradientBrush>
+      <LinearGradientBrush x:Key="TileAmber" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFF59E0B" Offset="0"/><GradientStop Color="#FFFCD34D" Offset="1"/></LinearGradientBrush>
       <SolidColorBrush x:Key="OkBrush" Color="#FF10B981"/>
       <SolidColorBrush x:Key="WarnBrush" Color="#FFF59E0B"/>
       <SolidColorBrush x:Key="ErrBrush" Color="#FFEF4444"/>
@@ -40,7 +44,7 @@
       <!-- ===== Type scale: Title 28 / Heading 20 / Subhead 15 / Body 14 / Caption 12 ===== -->
       <Style x:Key="MiTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="28"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
       <Style x:Key="MiHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="20"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
-      <Style x:Key="MiSubhead" TargetType="TextBlock"><Setter Property="FontSize" Value="15"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+      <Style x:Key="MiSubhead" TargetType="TextBlock"><Setter Property="FontSize" Value="15"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
       <Style x:Key="MiBody" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
       <Style x:Key="MiCaption" TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="Opacity" Value="0.7"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
 
@@ -48,8 +52,8 @@
       <Style x:Key="GlassCard" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource GlassBrush}"/>
         <Setter Property="BorderBrush" Value="{ThemeResource GlassStroke}"/>
-        <Setter Property="BorderThickness" Value="1.2"/>
-        <Setter Property="CornerRadius" Value="20"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="18"/>
         <Setter Property="Padding" Value="20"/>
       </Style>
 
@@ -66,11 +70,11 @@
         <Setter Property="Background" Value="{ThemeResource GlassBrush}"/>
         <Setter Property="BorderBrush" Value="{ThemeResource GlassStroke}"/>
         <Setter Property="BorderThickness" Value="1.2"/>
-        <Setter Property="CornerRadius" Value="24"/>
-        <Setter Property="Padding" Value="20"/>
-        <Setter Property="MinHeight" Value="170"/>
+        <Setter Property="CornerRadius" Value="26"/>
+        <Setter Property="Padding" Value="24,18"/>
+        <Setter Property="MinHeight" Value="104"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
-        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="UseSystemFocusVisuals" Value="True"/>
         <Setter Property="Template">
@@ -81,24 +85,13 @@
                 <VisualStateManager.VisualStateGroups>
                   <VisualStateGroup x:Name="CommonStates">
                     <VisualState x:Name="Normal">
-                      <Storyboard>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.14"/>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.14"/>
-                      </Storyboard>
+                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1"/><Setter Target="Tf.ScaleY" Value="1"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="PointerOver">
-                      <Storyboard>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleX" To="1.025" Duration="0:0:0.14"/>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleY" To="1.025" Duration="0:0:0.14"/>
-                      </Storyboard>
-                      <VisualState.Setters><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
+                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1.015"/><Setter Target="Tf.ScaleY" Value="1.015"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="Pressed">
-                      <Storyboard>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleX" To="0.97" Duration="0:0:0.08"/>
-                        <DoubleAnimation Storyboard.TargetName="Tf" Storyboard.TargetProperty="ScaleY" To="0.97" Duration="0:0:0.08"/>
-                      </Storyboard>
-                      <VisualState.Setters><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
+                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="0.97"/><Setter Target="Tf.ScaleY" Value="0.97"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="Disabled"><VisualState.Setters><Setter Target="CardRoot.Opacity" Value="0.5"/></VisualState.Setters></VisualState>
                   </VisualStateGroup>
@@ -108,7 +101,9 @@
                     <VisualState x:Name="PointerFocused"/>
                   </VisualStateGroup>
                 </VisualStateManager.VisualStateGroups>
-                <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"/>
+                <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" Translation="0,0,16">
+                  <Border.Shadow><ThemeShadow/></Border.Shadow>
+                </Border>
                 <ContentPresenter x:Name="ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
               </Grid>
             </ControlTemplate>

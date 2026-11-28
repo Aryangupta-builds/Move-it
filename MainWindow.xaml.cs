@@ -24,26 +24,43 @@ public sealed partial class MainWindow : Window
     string targetIp = "", targetCode = "", targetName = "";
     WebShare? web; Receiver? rx; CancellationTokenSource? scanCts, txCts;
     int scanRounds;
-    readonly DispatcherQueueTimer rxTimer;
+    readonly DispatcherQueueTimer rxTimer, rxPanelTimer;
+    bool rxHover, rxPanelOk;   // rxHover: pointer over icon/panel; rxPanelOk: details exist (a transfer started or ended), so hover may show them
 
     public MainWindow()
     {
         InitializeComponent();
         Title = "MoveIt";
+        foreach (UIElement el in new UIElement[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, HistoryPage, SettingsPage, MigrationPage, SoftwarePage }) Fx.Fade(el);
+        Fx.Fade(RxBottom, 0.35);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 800));
+        (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Maximize();   // always open maximized
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico")); } catch { }
-        Drift(B1, 60, 40, 11); Drift(B2, -50, 60, 14); Drift(B3, 70, -50, 17);
         DeviceGrid.ItemsSource = devices;
         ItemList.ItemsSource = items;
         items.CollectionChanged += (_, _) => RefreshItemsUi();
         VersionText.Text = "v" + AppInfo.Version; AboutVersion.Text = "Version " + AppInfo.Version;
+        InitSchedule();
         rxTimer = DispatcherQueue.CreateTimer(); rxTimer.Interval = TimeSpan.FromMilliseconds(120); rxTimer.Tick += (_, _) => RxTick();
-        Closed += (_, _) => StopAll();
+        rxPanelTimer = DispatcherQueue.CreateTimer(); rxPanelTimer.Interval = TimeSpan.FromSeconds(4);
+        rxPanelTimer.Tick += (_, _) => rxPanelTimer.Stop();   // transfer details stay visible: they are never auto-hidden
+        Particle.IconHover += inside => { rxHover = inside; if (inside) { rxPanelTimer.Stop(); if (rxPanelOk) ShowRxPanel(true); } else if (rxReceiving) { rxPanelTimer.Interval = TimeSpan.FromSeconds(1.5); rxPanelTimer.Start(); } };
+        Particle.IconTapped += () => { if (!rxPanelOk || !rxReceiving) return; if (RxBottom.Opacity > 0.5) ShowRxPanel(false); else PulseRxPanel(); };   // touch: tap toggles
+        Closed += (_, _) => { tray?.Dispose(); StopAll(true); };
+        AppWindow.Closing += AppWindow_Closing;
+        Activated += (_, a) => Aurora.SetPaused(a.WindowActivationState == WindowActivationState.Deactivated);
         LoadSettings();
+        tray = new TrayIcon(WindowNative.GetWindowHandle(this), Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico"),
+            TrayStatus, ShowFromTray, () => { ShowFromTray(); RefreshSettingsUi(); ShowPage(SettingsPage); }, () => { ShowFromTray(); exitRequested = true; Close(); });
+        if (cfg.TrayEnabled) tray.Show();
+        RootGrid.ActualThemeChanged += (_, _) => UpdateCaptionButtons();
+        RootGrid.Loaded += (_, _) => UpdateCaptionButtons();
+        RecoverIncoming();
         ExtendsContentIntoTitleBar = true; SetTitleBar(HeaderBar);
         AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
         AppWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
         AppWindow.TitleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        UpdateCaptionButtons();
         ModeRadio.SelectedIndex = 1;
         if (!cfg.SetupDone) { SetupName.Text = cfg.DeviceName; SetupName.PlaceholderText = Environment.MachineName; }
         BuildSetup();
@@ -68,9 +85,9 @@ public sealed partial class MainWindow : Window
     void ShowPage(Grid page)
     {
         // Settings / History are side pages: remember the real page we came from, not each other
-        if (current != null && current != page && current != SettingsPage && current != HistoryPage) previous = current;
+        if (current != null && current != page && current != SettingsPage && current != HistoryPage && current != SoftwarePage) previous = current;
         current = page;
-        foreach (var g in new[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, HistoryPage, SettingsPage })
+        foreach (var g in new[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, HistoryPage, SettingsPage, MigrationPage, SoftwarePage })
         {
             if (g == page) { g.Opacity = 0; g.Visibility = Visibility.Visible; DispatcherQueue.TryEnqueue(() => g.Opacity = 1); }
             else g.Visibility = Visibility.Collapsed;
@@ -78,6 +95,18 @@ public sealed partial class MainWindow : Window
         BackBtn.Visibility = page == HomePage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
         SettingsBtn.Visibility = page == SettingsPage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
         HistoryBtn.Visibility = page == HistoryPage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
+        UpdateHeaderStage();
+    }
+
+    // while the full-screen particle stage is open it also runs under the header (no seam): header + caption buttons turn light
+    bool stageLive;
+    void UpdateHeaderStage()
+    {
+        bool live = RxPage.Visibility == Visibility.Visible && RxLiveView.Visibility == Visibility.Visible;
+        if (live == stageLive) return;
+        stageLive = live;
+        HeaderBar.RequestedTheme = live ? ElementTheme.Dark : ElementTheme.Default;
+        UpdateCaptionButtons();
     }
 
     bool dialogOpen;
@@ -108,11 +137,39 @@ public sealed partial class MainWindow : Window
 
     bool Sending => SendingPanel.Visibility == Visibility.Visible && TxLive.Visibility == Visibility.Visible && txCts != null;
 
+    // Closing the window EXITS MoveIt (no tray yet). If a transfer is running, ask first so it is never ended by accident.
+    bool closeConfirmed, exitRequested;
+    TrayIcon? tray;
+    string TrayStatus() => rxReceiving ? "Receiving files…" : Sending || queueRunning ? "Sending files…" : "Idle - no transfer running";
+    public bool StartHiddenOk => cfg.TrayEnabled && tray is { Visible: true };
+    void ShowFromTray() { AppWindow.Show(); Activate(); }
+
+    void Tray_Toggled(object s, RoutedEventArgs e)
+    {
+        if (loadingSettings) return;
+        cfg.TrayEnabled = TraySwitch.IsOn; SaveSettings();
+        if (cfg.TrayEnabled) tray?.Show(); else tray?.Hide();
+    }
+
+    async void AppWindow_Closing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs e)
+    {
+        if (cfg.TrayEnabled && tray is { Visible: true } && !exitRequested && !closeConfirmed) { e.Cancel = true; AppWindow.Hide(); return; }   // hide to tray, transfers keep running
+        if (queueRunning) { e.Cancel = true; return; }   // close the queue window first (that cancels it)
+        if (closeConfirmed || !(rxReceiving || Sending)) return;
+        e.Cancel = true;
+        if (!await Confirm("Exit MoveIt?", "A transfer is in progress. If you exit now it will be cancelled.", "Cancel transfer and exit", "Keep transferring")) return;
+        if (rxReceiving) { CancelRx(); await Task.Delay(450); }   // let the cancel message reach the other laptop
+        txCts?.Cancel();
+        closeConfirmed = true; Close();
+    }
+
     // Back works from every page. If a transfer is running, ask first, tell the other device, then leave.
     async Task GoBackAsync()
     {
         if (current == SetupPage) return;
         if (current == SettingsPage || current == HistoryPage) { ShowPage(previous ?? HomePage); return; }
+        if (current == SoftwarePage) { ShowPage(SettingsPage); return; }
+        if (current == MigrationPage) { ShowPage(SendPage); return; }   // Migration Center opens from the Send page
         if (current == RxPage && rxReceiving)
         {
             if (!await Confirm("Cancel this transfer?", "A transfer is in progress. If you leave now it will be cancelled.", "Cancel transfer", "Keep receiving")) return;
@@ -126,19 +183,45 @@ public sealed partial class MainWindow : Window
         if (current == RxPage && cfg.MobileShare) { StopAll(); ShowPage(RxChoosePage); return; }
         StopAll(); ShowPage(HomePage);
     }
-    async void Back_Accel(KeyboardAccelerator a, KeyboardAcceleratorInvokedEventArgs e) { if (current != HomePage) { e.Handled = true; await GoBackAsync(); } }
+    async void Back_Accel(KeyboardAccelerator a, KeyboardAcceleratorInvokedEventArgs e)
+    {
+        // Esc / Alt+Left must not also fire when a dialog or dropdown is open (Esc is meant to close that first)
+        if (current == HomePage || VisualTreeHelper.GetOpenPopupsForXamlRoot(Content.XamlRoot).Count > 0) return;
+        e.Handled = true; await GoBackAsync();
+    }
+    // Narrow (< 760 px): smaller side padding and a single column of mode choices. Cards are single-column everywhere.
+    bool? narrowLayout;
+    void Root_SizeChanged(object s, SizeChangedEventArgs e) => ApplyLayout(e.NewSize.Width);
+
+    void ApplyLayout(double width)
+    {
+        bool n = width < 760;
+        if (narrowLayout == n) return;
+        narrowLayout = n;
+        PagesHost.Padding = n ? new Thickness(14, 0, 14, 0) : new Thickness(24, 0, 24, 0);
+        ModeRadio.MaxColumns = n ? 1 : 3;
+    }
+
     async void Root_PointerPressed(object s, PointerRoutedEventArgs e)
     {
         if (e.GetCurrentPoint(RootGrid).Properties.IsXButton1Pressed && current != HomePage) await GoBackAsync();
     }
     async void Back_Click(object s, RoutedEventArgs e) => await GoBackAsync();
 
-    void StopAll()
+    void StopAll(bool sync = false)
     {
-        rxGen++; rxTimer.Stop(); rxReceiving = false; rxConnected = false;
+        rxGen++; rxTimer.Stop(); rxPanelTimer.Stop(); StopQrSpin(); rxReceiving = false; rxConnected = false;
         scanCts?.Cancel(); txCts?.Cancel();
-        ScanRadar.Stop(); Particle.Stop(); SendFx.Stop();
+        ScanRadar.Stop(); Particle.Stop(); SendParticle.Stop();
         rx?.Stop(); rx = null; web?.Stop(); web = null;
+        // files that finished but were never moved out of the staging folder go to the default save folder
+        var st = stage; stage = "";
+        if (st != "")
+        {
+            var target = dest;
+            void Work() { try { MoveStaged(st, target); Directory.Delete(st, true); } catch { } }
+            if (sync) Work(); else _ = Task.Run(Work);
+        }
     }
 
     T Init<T>(T picker) { InitializeWithWindow.Initialize(picker!, WindowNative.GetWindowHandle(this)); return picker; }
@@ -174,7 +257,9 @@ public sealed partial class MainWindow : Window
         loadingSettings = true;
         ThemeRadio.SelectedIndex = cfg.Theme == "Light" ? 1 : cfg.Theme == "Dark" ? 2 : 0;
         NameBox.Text = cfg.DeviceName; NameBox.PlaceholderText = Environment.MachineName;
-        FolderText.Text = dest; OpenSwitch.IsOn = cfg.OpenWhenDone; MobileSwitch.IsOn = cfg.MobileShare;
+        StartupSwitch.IsOn = StartupReg.IsEnabled(); TraySwitch.IsOn = cfg.TrayEnabled;
+        UpdateUrlBox.Text = cfg.UpdateUrl;
+        FolderText.Text = dest; OpenSwitch.IsOn = cfg.OpenWhenDone; MobileSwitch.IsOn = cfg.MobileShare; PlainSwitch.IsOn = cfg.AllowPlain; Net.AllowPlainFallback = cfg.AllowPlain;
         HomeInfo.Text = $"This laptop: {DeviceName}  •  {Net.LocalIp()}";
         loadingSettings = false;
     }
@@ -182,13 +267,27 @@ public sealed partial class MainWindow : Window
     void ApplyTheme(string t)
     {
         RootGrid.RequestedTheme = t == "Light" ? ElementTheme.Light : t == "Dark" ? ElementTheme.Dark : ElementTheme.Default;
-        // keep the window caption buttons (minimize / maximize / close) readable when the app theme differs from the Windows theme
+        UpdateCaptionButtons();
+    }
+
+    // The system minimize / maximize / close buttons follow the SYSTEM theme, not the app theme. If the app is dark
+    // but Windows is light (or the other way round) they become invisible, so we colour them ourselves.
+    void UpdateCaptionButtons()
+    {
         try
         {
-            if (!Microsoft.UI.Windowing.AppWindowTitleBar.IsCustomizationSupported()) return;
+            bool appDark = RootGrid.ActualTheme == ElementTheme.Dark;
+            Aurora.SetDark(appDark);
+            bool dark = appDark || stageLive;   // the particle stage is always dark
+            Windows.UI.Color Argb(byte a, byte r, byte g, byte b) => Windows.UI.Color.FromArgb(a, r, g, b);
+            var fg = dark ? Argb(255, 255, 255, 255) : Argb(255, 20, 20, 20);
             var tb = AppWindow.TitleBar;
-            Windows.UI.Color? fg = t == "Light" ? Microsoft.UI.Colors.Black : t == "Dark" ? Microsoft.UI.Colors.White : null;
-            tb.ButtonForegroundColor = fg; tb.ButtonInactiveForegroundColor = fg;
+            tb.ButtonForegroundColor = fg; tb.ButtonHoverForegroundColor = fg; tb.ButtonPressedForegroundColor = fg;
+            tb.ButtonInactiveForegroundColor = dark ? Argb(255, 150, 155, 170) : Argb(255, 110, 115, 130);
+            tb.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+            tb.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+            tb.ButtonHoverBackgroundColor = dark ? Argb(40, 255, 255, 255) : Argb(30, 0, 0, 0);
+            tb.ButtonPressedBackgroundColor = dark ? Argb(70, 255, 255, 255) : Argb(55, 0, 0, 0);
         }
         catch { }
     }
@@ -212,13 +311,60 @@ public sealed partial class MainWindow : Window
     }
 
     void Open_Toggled(object s, RoutedEventArgs e) { if (loadingSettings) return; cfg.OpenWhenDone = OpenSwitch.IsOn; SaveSettings(); }
+    // ---------- updates (safe workflow: user starts it, https only, SHA-256 checked, user confirms before the installer runs) ----------
+    UpdateInfo? pendingUpdate;
+    void UpdateUrl_LostFocus(object s, RoutedEventArgs e) { cfg.UpdateUrl = UpdateUrlBox.Text.Trim(); SaveSettings(); }
+
+    async void UpdateCheck_Click(object s, RoutedEventArgs e)
+    {
+        cfg.UpdateUrl = UpdateUrlBox.Text.Trim(); SaveSettings();
+        UpdateGetBtn.Visibility = Visibility.Collapsed; pendingUpdate = null;
+        if (cfg.UpdateUrl == "") { UpdateText.Text = $"Installed version: {AppInfo.Version}. No update source is set, so nothing was checked."; return; }
+        UpdateCheckBtn.IsEnabled = false; UpdateText.Text = "Checking…";
+        try
+        {
+            var u = await Updater.CheckAsync(cfg.UpdateUrl);
+            if (u == null) UpdateText.Text = $"You have the latest version ({AppInfo.Version}).";
+            else { pendingUpdate = u; UpdateText.Text = $"Version {u.Version} is available (you have {AppInfo.Version}).\n{u.Notes}"; UpdateGetBtn.Visibility = Visibility.Visible; }
+        }
+        catch (Exception ex) { UpdateText.Text = "Could not check for updates: " + ex.Message; }
+        finally { UpdateCheckBtn.IsEnabled = true; }
+    }
+
+    async void UpdateGet_Click(object s, RoutedEventArgs e)
+    {
+        var u = pendingUpdate; if (u == null) return;
+        if (rxReceiving || Sending) { await Msg("Transfer in progress", "Finish or cancel the transfer before updating."); return; }
+        if (!await Confirm("Install MoveIt " + u.Version + "?", "The installer will be downloaded and checked first. MoveIt closes while it updates. Your settings and history are kept.", "Download", "Not now")) return;
+        UpdateGetBtn.IsEnabled = false; UpdateText.Text = "Downloading…";
+        try
+        {
+            var path = await Updater.DownloadVerifiedAsync(u, new Progress<double>(p => UpdateText.Text = $"Downloading… {p:0}%"));
+            UpdateText.Text = "Download verified (checksum matches).";
+            if (!await Confirm("Run the installer now?", "The file was checked against the published checksum. Windows may still show its own security prompt.", "Install now", "Later")) return;
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+            closeConfirmed = true; Close();
+        }
+        catch (Exception ex) { UpdateText.Text = "Update failed: " + ex.Message; }
+        finally { UpdateGetBtn.IsEnabled = true; }
+    }
+
+    async void Startup_Toggled(object s, RoutedEventArgs e)
+    {
+        if (loadingSettings) return;
+        bool want = StartupSwitch.IsOn;
+        if (StartupReg.Set(want)) return;
+        // could not change it (policy / permissions): show the real state, do not pretend
+        loadingSettings = true; StartupSwitch.IsOn = StartupReg.IsEnabled(); loadingSettings = false;
+        await Msg("Startup setting", "Windows did not allow this change. If MoveIt is switched off in Task Manager > Startup apps, turn it on there too.");
+    }
     void Mobile_Toggled(object s, RoutedEventArgs e) { if (loadingSettings) return; cfg.MobileShare = MobileSwitch.IsOn; SaveSettings(); }
 
     void Reset_Click(object s, RoutedEventArgs e)
     {
         cfg = new();
         dest = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "MoveIt_Received");
-        SaveSettings(); ApplyTheme("Default"); RefreshSettingsUi();
+        tray?.Hide(); SaveSettings(); ApplyTheme("Default"); RefreshSettingsUi();
     }
 
     // ---------- history ----------
@@ -340,13 +486,13 @@ public sealed partial class MainWindow : Window
         if (!folder) { try { size = new FileInfo(path).Length; } catch { } }
         return new SendItem
         {
-            Path = path, Folder = folder, Size = size,
+            FullPath = path, Folder = folder, Size = size,
             Name = Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : path,
             Detail = folder ? "Folder  •  " + path : Fmt(size) + "  •  " + (Path.GetDirectoryName(path) ?? "")
         };
     }
 
-    void AddItem(string path, bool folder) { if (!items.Any(i => i.Path == path)) items.Add(MakeItem(path, folder)); }
+    void AddItem(string path, bool folder) { if (!items.Any(i => i.FullPath == path)) items.Add(MakeItem(path, folder)); }
 
     async void AddFiles_Click(object s, RoutedEventArgs e)
     {
@@ -370,7 +516,7 @@ public sealed partial class MainWindow : Window
 
     void RemoveItem_Click(object s, RoutedEventArgs e)
     {
-        if (s is Button b && b.Tag is string path) { var it = items.FirstOrDefault(i => i.Path == path); if (it != null) items.Remove(it); }
+        if (s is Button b && b.Tag is string path) { var it = items.FirstOrDefault(i => i.FullPath == path); if (it != null) items.Remove(it); }
     }
 
     void Clear_Click(object s, RoutedEventArgs e) => items.Clear();
@@ -384,28 +530,39 @@ public sealed partial class MainWindow : Window
         if (m == 0 && items.Count > 1) { var first = items[0]; items.Clear(); items.Add(first); }
     }
 
+    void ClearAll_Click(object s, RoutedEventArgs e)
+    {
+        foreach (var c in new[] { CbDesktop, CbDocuments, CbDownloads, CbPictures, CbVideos, CbMusic, CbApps, CbBrowser, CbGames, CbDev }) c.IsChecked = false;
+    }
+
     void SelectAll_Click(object s, RoutedEventArgs e)
     {
-        foreach (var c in new[] { CbDesktop, CbDocuments, CbDownloads, CbPictures, CbVideos, CbMusic, CbApps }) c.IsChecked = true;
+        foreach (var c in new[] { CbDesktop, CbDocuments, CbDownloads, CbPictures, CbVideos, CbMusic, CbApps, CbBrowser, CbGames, CbDev }) c.IsChecked = true;
     }
 
     void ResetSendView()
     {
         PickPanel.Visibility = Visibility.Visible; SendingPanel.Visibility = Visibility.Collapsed;
         TxResult.Visibility = Visibility.Collapsed; TxLive.Visibility = Visibility.Visible;
-        SendFx.Stop();
+        SendParticle.Stop(); txAnimating = false;
     }
 
     readonly RateMeter txRate = new(); long txTotal; int txFiles;
 
+    bool txAnimating;   // particles start only when bytes really flow
+    string lastTx = "";   // kept so details stay visible after cancel or failure
+
     void ShowTx(Prog p)
     {
+        if (!txAnimating && p.Done > 0) { txAnimating = true; SendParticle.BeginTransfer(); }
         double pct = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
         txTotal = p.Total;
         double speed = txRate.Update(p.Done, Environment.TickCount64);
         TxBar.Value = pct; TxPercent.Text = $"{pct:0}%";
-        if (!string.IsNullOrEmpty(p.File)) TxFile.Text = p.Count > 1 ? $"{p.File}  ({p.Index} of {p.Count})" : p.File;
-        TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {(speed > 0 ? Fmt(speed) + "/s" : "—")}  •  ETA {AppInfo.Eta(p.Total - p.Done, speed)}";
+        if (!string.IsNullOrEmpty(p.File)) TxFile.Text = $"{p.File}  ({Fmt(p.FileSize)}, file {p.Index} of {p.Count}, {Math.Max(0, p.Count - p.Index)} more after this)";
+        SendParticle.SetProgress(pct);
+        TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)} ({Fmt(Math.Max(0, p.Total - p.Done))} left)  •  {(speed > 0 ? Fmt(speed) + "/s" : "—")}  •  Estimated time: {AppInfo.Eta(p.Total - p.Done, speed)}";
+        lastTx = TxFile.Text + "\n" + TxStat.Text;
     }
 
     async void Cancel_Click(object s, RoutedEventArgs e)
@@ -432,40 +589,159 @@ public sealed partial class MainWindow : Window
     void TxChangeDevice_Click(object s, RoutedEventArgs e) { ResetSendView(); ShowPage(ScanPage); StartScan(); }
     void Done_Click(object s, RoutedEventArgs e) { StopAll(); items.Clear(); ResetSendView(); ShowPage(HomePage); }
 
+    // Spec 23: only reports what is known on this laptop; unknown values say so.
+    static string MigrationSummary(MigPlan plan, bool clean)
+    {
+        int folders = plan.Files.Select(f => Path.GetDirectoryName(f.rel)).Distinct().Count() + plan.EmptyDirs.Count;
+        var s = $"\n\nSelected: {plan.Files.Count} file(s) in {folders} folder(s), {AppInfo.Fmt(plan.Bytes)}\n\nNew laptop checklist:";
+        foreach (var c in plan.Included) s += $"\n- {c}: {(clean ? "transferred" : "check the problem list")}";
+        if (plan.Excluded.Count > 0) s += "\n- Skipped by you: " + string.Join(", ", plan.Excluded);
+        return s + "\n- Applications: install on the new laptop (unsupported apps: not available here)\n- Accounts: sign in yourself (Settings > Account setup)\n- App updates: check on the new laptop\n- Destination backup: not part of this migration\n- Folder Sync: separate, see its history file";
+    }
+
+    sealed record MigPlan(List<(string p, string rel)> Files, List<string> EmptyDirs, int Blocked, long Bytes, List<string> Included, List<string> Excluded);
+
+    // Complete migration, step by step: check the other laptop (battery, free space), scan read-only, ask about empty folders, show the final review. Returns null if blocked or cancelled.
+    async Task<MigPlan?> PlanMigration(List<ScanRoot> roots, bool apps, bool skipDup, List<string> notSelected)
+    {
+        SendBtn.IsEnabled = false;
+        try
+        {
+            PeerInfo peer;
+            try { using var to = new CancellationTokenSource(TimeSpan.FromSeconds(8)); peer = await Sender.Probe(targetIp, targetCode, to.Token); }
+            catch (Exception ex)
+            {
+                await Msg("Cannot check the other laptop", ex.Message.Contains("pairing code") ? "Wrong pairing code. Go back and enter the code shown on the receiving laptop." : "Make sure both laptops are on the same WiFi and the other laptop is still on the Receive screen.");
+                return null;
+            }
+            if (peer.Busy) { await Msg("The other laptop is busy", "It is already receiving another transfer. Try again in a moment."); return null; }
+            var mine = Battery.Read();
+            var gate = MigrationGate.Check(mine, peer, targetName);
+            if (gate.Result == GateResult.Blocked) { await Msg("Battery too low", gate.Message); return null; }
+            if (gate.Result == GateResult.NeedConfirm && !await Confirm("Battery status unknown", gate.Message, "Continue", "Cancel")) return null;
+
+            SendBtn.Content = "Scanning…";
+            var scans = await Task.Run(() => roots.Select(r => Scanner.Scan(r, CancellationToken.None)).ToList());
+            var files = scans.SelectMany(x => x.Files).ToList();
+            long bytes = scans.Sum(x => x.Bytes); int blocked = scans.Sum(x => x.Blocked), dupCount = 0;
+            if (skipDup && files.Count > 1)
+            {
+                SendBtn.Content = "Checking duplicates…";
+                var groups = await Task.Run(() => Duplicates.Find(files.Select(f => f.p), CancellationToken.None));
+                var extra = Duplicates.Extras(groups); dupCount = extra.Count;
+                bytes -= groups.Sum(g => g.Wasted);
+                files = files.Where(f => !extra.Contains(f.p)).ToList();
+            }
+            int deselected = 0;
+            if (files.Count > 0 && await Confirm("Choose individual files?", $"{files.Count} file(s) found.", "Choose files", "Use all"))
+            {
+                var pick = await ChooseFiles(files, scans.SelectMany(x => x.EmptyDirs).ToList()); if (pick == null) return null;
+                deselected = files.Count - pick.Value.Files.Count; files = pick.Value.Files; bytes = pick.Value.Bytes;
+            }
+            if (peer.FreeBytes >= 0 && bytes > peer.FreeBytes)
+            { await Msg("Not enough space on the other laptop", $"You selected {Fmt(bytes)} but the other laptop has {Fmt(peer.FreeBytes)} free on its system drive. Free some space or select less."); return null; }
+
+            var empties = scans.SelectMany(x => x.EmptyDirs).ToList(); bool includeEmpty = false;
+            if (empties.Count > 0)
+                includeEmpty = await Confirm("Empty folders found", $"{empties.Count} empty folder(s) were found. Do you also want to migrate empty folders?", "Include empty folders", "Exclude empty folders");
+
+            var red = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
+            var panel = new StackPanel { Spacing = 4 };
+            void Line(string t, Brush? br = null) { var tb = new TextBlock { Text = t, TextWrapping = TextWrapping.Wrap }; if (br != null) tb.Foreground = br; panel.Children.Add(tb); }
+            Line($"To: {targetName}");
+            Line($"Battery: this laptop {Battery.Describe(mine)}; {targetName} {(peer.HasBattery ? (peer.Battery >= 0 ? peer.Battery + "%" + (peer.Charging ? " (charging)" : "") : "not available") : "no battery")}");
+            Line($"Free space on the other laptop: {(peer.FreeBytes >= 0 ? Fmt(peer.FreeBytes) : "not available")}");
+            Line("");
+            var included = new List<string>();
+            foreach (var sc in scans)
+            {
+                if (!sc.Exists) { continue; }
+                Line($"✓ {sc.Root.Name}: {sc.Files.Count} file(s), {Fmt(sc.Bytes)}");
+                if (!included.Contains(sc.Root.Category)) included.Add(sc.Root.Category);
+            }
+            if (apps) { Line("✓ Installed apps list + reinstall script"); included.Add("App list"); }
+            foreach (var sc in scans.Where(x => !x.Exists)) Line($"Not found on this laptop: {sc.Root.Name}");
+            if (notSelected.Count > 0) Line("Not selected: " + string.Join(", ", notSelected));
+            if (empties.Count > 0)
+            {
+                Line("");
+                Line($"EMPTY FOLDER × {empties.Count}: {(includeEmpty ? "will be created on the other laptop" : "will be skipped")}", red);
+                foreach (var d in empties.Take(8)) Line("EMPTY FOLDER  " + d, red);
+                if (empties.Count > 8) Line($"… and {empties.Count - 8} more", red);
+            }
+            if (deselected > 0) Line($"{deselected} file(s) deselected by you.");
+            if (blocked > 0) Line($"{blocked} item(s) left out for safety (passwords, keys, tokens, cookies).");
+            if (dupCount > 0) Line($"{dupCount} exact duplicate file(s) will be skipped.");
+            if (scans.Any(x => x.Unreadable > 0)) Line($"{scans.Sum(x => x.Unreadable)} item(s) could not be read and will be left out.");
+            Line("");
+            Line($"Total: {files.Count} file(s), {Fmt(bytes)}" + (apps ? " (plus app list)" : ""));
+            Line("Nothing on this laptop is changed or deleted. Estimated time is shown once the transfer starts.");
+
+            dialogOpen = true; bool go;
+            try
+            {
+                go = await new ContentDialog
+                {
+                    Title = "Review before migration", Content = new ScrollViewer { MaxHeight = 380, Content = panel },
+                    PrimaryButtonText = "Start migration", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = Content.XamlRoot, RequestedTheme = RootGrid.RequestedTheme
+                }.ShowAsync() == ContentDialogResult.Primary;
+            }
+            finally { dialogOpen = false; }
+            if (!go) return null;
+            PeerInfo latest;
+            try { using var again = new CancellationTokenSource(TimeSpan.FromSeconds(8)); latest = await Sender.Probe(targetIp, targetCode, again.Token); }
+            catch (Exception ex) { await Msg("Cannot check the other laptop", ex.Message); return null; }
+            var recheck = MigrationGate.Check(Battery.Read(), latest, targetName);
+            if (recheck.Result == GateResult.Blocked) { await Msg("Battery too low", recheck.Message); return null; }
+            return new MigPlan(files, includeEmpty ? empties : new List<string>(), blocked, bytes, included, notSelected);
+        }
+        finally { SendBtn.IsEnabled = true; SendBtn.Content = "Send"; }
+    }
+
     async void Send_Click(object s, RoutedEventArgs e)
     {
-        bool full = ModeRadio.SelectedIndex == 2;
-        var dirs = new List<(string name, string path)>();
-        string prof = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (full && CbDesktop.IsChecked == true) dirs.Add(("Desktop", Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)));
-        if (full && CbDocuments.IsChecked == true) dirs.Add(("Documents", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)));
-        if (full && CbDownloads.IsChecked == true) dirs.Add(("Downloads", Path.Combine(prof, "Downloads")));
-        if (full && CbPictures.IsChecked == true) dirs.Add(("Pictures", Environment.GetFolderPath(Environment.SpecialFolder.MyPictures)));
-        if (full && CbVideos.IsChecked == true) dirs.Add(("Videos", Environment.GetFolderPath(Environment.SpecialFolder.MyVideos)));
-        if (full && CbMusic.IsChecked == true) dirs.Add(("Music", Environment.GetFolderPath(Environment.SpecialFolder.MyMusic)));
+        var resumeSnap = resumeFiles; var resumeDirSnap = resumeDirs; resumeFiles = null; resumeDirs = null;
+        bool resuming = resumeSnap != null;
+        bool full = !resuming && ModeRadio.SelectedIndex == 2;
+        var roots = new List<ScanRoot>(); var notSelected = new List<string>();
+        if (full)
+        {
+            roots.AddRange(MigrationCatalog.Personal(CbDesktop.IsChecked == true, CbDocuments.IsChecked == true, CbDownloads.IsChecked == true, CbPictures.IsChecked == true, CbVideos.IsChecked == true, CbMusic.IsChecked == true));
+            if (CbBrowser.IsChecked == true) roots.AddRange(MigrationCatalog.Browser());
+            if (CbGames.IsChecked == true) roots.AddRange(MigrationCatalog.Games());
+            if (CbDev.IsChecked == true) roots.AddRange(MigrationCatalog.DevSettings());
+            foreach (var (cb, label) in new[] { (CbDesktop, "Desktop"), (CbDocuments, "Documents"), (CbDownloads, "Downloads"), (CbPictures, "Pictures"), (CbVideos, "Videos"), (CbMusic, "Music"), (CbBrowser, "Browser bookmarks"), (CbGames, "Game saves"), (CbDev, "Editor settings"), (CbApps, "App list") })
+                if (cb.IsChecked != true) notSelected.Add(label);
+        }
         bool apps = full && CbApps.IsChecked == true;
-        if ((!full && items.Count == 0) || (full && dirs.Count == 0 && !apps)) { await Msg("Nothing selected", full ? "Tick at least one option." : "Add a file first."); return; }
+        if (!resuming && ((!full && items.Count == 0) || (full && roots.Count == 0 && !apps))) { await Msg("Nothing selected", full ? "Tick at least one option." : "Add a file first."); return; }
+
+        MigPlan? plan = null;
+        if (full) { plan = await PlanMigration(roots, apps, CbSkipDup.IsChecked == true, notSelected); if (plan == null) return; }
 
         PickPanel.Visibility = Visibility.Collapsed; SendingPanel.Visibility = Visibility.Visible;
         TxResult.Visibility = Visibility.Collapsed; TxLive.Visibility = Visibility.Visible;
         CancelBtn.IsEnabled = true;
         TxBar.Value = 0; TxPercent.Text = "0%"; TxFile.Text = ""; txRate.Reset(); txTotal = 0; txFiles = 0;
-        SendFx.DeviceLabel = DeviceName; SendFx.Transfer(true);
-        txCts = new(); var token = txCts.Token;
-        var snapshot = full ? new List<(string path, bool folder)>() : items.Select(i => (i.Path, i.Folder)).ToList();
+        txAnimating = false; SendParticle.Start(); SendParticle.SetDevice("Laptop"); SendParticle.Connect();
+        TxDevices.Text = $"From {DeviceName}  →  To {targetName}  •  {ActiveLink(targetIp)}";
+        SetWiredWatch(targetIp);
+        txCts = new(); var token = txCts.Token; reconCts?.Cancel();
+        var snapshot = full || resuming ? new List<(string path, bool folder)>() : items.Select(i => (path: i.FullPath, folder: i.Folder)).ToList();   // same tuple names on both sides: a differing name would be dropped and x.path would not compile
+        lastTx = "";
         var prog = new Progress<Prog>(ShowTx);   // created on the UI thread, so reports arrive on the UI thread (the sender reports every ~200 ms)
-        string status = "Failed"; string device = targetName;
+        string status = "Failed"; string device = targetName; var started = DateTime.Now;
         try
         {
             TxStat.Text = "Collecting files…";
-            var files = await Task.Run(async () =>
+            var files = resuming ? resumeSnap! : await Task.Run(async () =>
             {
                 var l = new List<(string, string)>();
+                if (plan != null) l.AddRange(plan.Files);
                 foreach (var (path, folder) in snapshot)
                     if (!folder) l.Add((path, Path.GetFileName(path)));
                     else l.AddRange(Sender.Walk(path, Path.GetFileName(path.TrimEnd('\\', '/'))));
-                foreach (var (name, path) in dirs)
-                    if (Directory.Exists(path)) l.AddRange(Sender.Walk(path, "UserData/" + name));
                 if (apps)
                 {
                     DispatcherQueue.TryEnqueue(() => TxStat.Text = "Exporting app list (may take a minute)…");
@@ -475,30 +751,50 @@ public sealed partial class MainWindow : Window
             });
             token.ThrowIfCancellationRequested();
             txFiles = files.Count;
-            TxStat.Text = "Connecting…";
-            await Sender.Send(targetIp, targetCode, DeviceName, files, prog, token);
-            TxBar.Value = 100; TxPercent.Text = "100%"; SendFx.Done(); status = "Completed";
-            ShowTxResult("\uE73E", Res("OkBrush"), "Transfer Complete", $"Sent to {targetName}",
-                $"Files: {txFiles}\nTotal size: {Fmt(txTotal)}", false);
+            TxStat.Text = "Establishing Connection…";
+            try { using var cto = new CancellationTokenSource(TimeSpan.FromSeconds(8)); using var link = CancellationTokenSource.CreateLinkedTokenSource(cto.Token, token); await Sender.Probe(targetIp, targetCode, link.Token); TxStat.Text = "Connected (" + ActiveLink(targetIp) + "). Starting…"; }
+            catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+            catch { TxStat.Text = "Establishing Connection… (no answer yet, trying to send anyway)"; }
+            PendingStore.Save(targetName, files, resuming ? resumeDirSnap : plan?.EmptyDirs);
+            var rep = await Sender.Send(targetIp, targetCode, DeviceName, files, prog, token, resuming ? resumeDirSnap : plan?.EmptyDirs);
+            txFiles = rep.Sent;
+            TxBar.Value = 100; TxPercent.Text = "100%"; SendParticle.Complete();
+            bool clean = rep.Clean; status = clean ? "Completed" : "Partial";
+            if (clean) PendingStore.Clear();   // otherwise the manifest stays so the rest can be resumed
+            if (clean && !full) MarkScheduledDone(snapshot.Select(x => x.path));
+            var saved = ReportStore.Save(ReportStore.Build(full ? "Complete migration" : "File transfer", DeviceName, targetName, started, DateTime.Now, txTotal, rep, status, ActiveLink(targetIp) + " (TCP)", plan?.Included, plan?.Excluded, plan?.Blocked ?? 0));
+            string details = $"Files confirmed by the other laptop: {rep.Sent}\nTotal size: {Fmt(txTotal)}"
+                + (rep.EmptyFolders > 0 ? $"\nEmpty folders created: {rep.EmptyFolders}" : "")
+                + (rep.Encrypted ? "\nThe connection was encrypted (AES-256-GCM)." : "\nNOT encrypted: the other laptop runs an older MoveIt. Use only on a network you trust.")
+                + (rep.Checked ? "\nEvery file was verified with a SHA-256 checksum." : "\nChecksum verification was not available (the other laptop runs an older MoveIt).")
+                + (clean ? "" : $"\n\nNOT sent ({rep.NotSent}):\n - " + string.Join("\n - ", rep.Problems.Take(8)) + (rep.Problems.Count > 8 ? $"\n - … and {rep.Problems.Count - 8} more (see the report)" : ""))
+                + (plan != null && plan.Blocked > 0 ? $"\n\n{plan.Blocked} item(s) were left out for safety (passwords, keys, tokens)." : "")
+                                + (full && plan != null ? MigrationSummary(plan, clean) : "")
+                + (saved != null ? "\n\nReport saved: " + saved : "");
+            ShowTxResult(clean ? "\uE73E" : "\uE7BA", clean ? Res("OkBrush") : Res("WarnBrush"), clean ? "Transfer Complete" : "Completed with problems",
+                clean ? $"Sent to {targetName}" : $"{rep.NotSent} item(s) were not sent", details, !clean);
         }
         catch (RemoteCancelledException)
         {
-            status = "Cancelled"; SendFx.Stop();
+            status = "Cancelled"; SendParticle.Error();
             ShowTxResult("\uE711", Res("WarnBrush"), "Cancelled", "Cancelled by receiver", "The receiver stopped the transfer. Files that already finished are kept on the receiving laptop.", true);
         }
         catch (OperationCanceledException)
         {
-            status = "Cancelled"; SendFx.Stop();
+            status = "Cancelled"; SendParticle.Error();
             ShowTxResult("\uE711", Res("WarnBrush"), "Cancelled", "You cancelled the transfer", "Files that already finished are kept on the receiving laptop. The file in progress was discarded.", true);
         }
         catch (Exception ex)
         {
-            SendFx.Stop();
+            SendParticle.Error();
             ShowTxResult("\uE7BA", Res("ErrBrush"), "Transfer failed", ex.Message, ex.Message.Contains("pairing code") ? "Go back and enter the code shown on the receiving laptop." : "Check that both laptops are on the same WiFi and the receiving laptop is still on the Receive screen.", true);
+            StartReconnectWatch();
         }
         finally
         {
             CancelBtn.IsEnabled = true; txCts?.Dispose(); txCts = null;
+            if (status is not ("Completed" or "Partial") && lastTx != "") TxResDetails.Text += "\n\nAt stop: " + lastTx;
+            if (status is not ("Completed" or "Partial")) SaveSimpleReport("Send", DeviceName, device, started, txFiles, null, null, null, txTotal, status);
             HistoryStore.Add(new HistoryEntry(DateTime.Now, "Sent", device, txFiles, txTotal, status));
         }
     }
@@ -507,41 +803,135 @@ public sealed partial class MainWindow : Window
     int rxGen; bool phoneMode, rxConnected, rxReceiving, rxFatal;
     string peerName = "", peerType = ""; int rxCount; long rxTotal; Prog? rxLatest; long rxStartMs, terminalAt;
     readonly RateMeter rxRate = new();
+    string stage = "";    // staging folder of the current receive session (files land here first, then move to the folder the user picks)
+    string savedTo = "";  // folder where the finished files really ended up
 
-    void SetRxState(string text) { RxStateText.Text = text; RxStageText.Text = text; }
+    static string IncomingRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MoveIt", "Incoming");
+
+    static string NewStage()
+    {
+        var d = Path.Combine(IncomingRoot, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(d);
+        return d;
+    }
+
+    // Moves finished files from the staging folder into target (keeps sub folders, renames duplicates). Unfinished .part files stay. Returns how many files moved.
+    static int MoveStaged(string from, string target, string mode = "both")   // both | replace | skip (identical only)
+    {
+        int n = 0;
+        if (!Directory.Exists(from)) return 0;
+        foreach (var f in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories).ToList())
+        {
+            if (f.EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                var to = Path.Combine(target, Path.GetRelativePath(from, f));
+                if (File.Exists(to))
+                {
+                    if (mode == "replace") { File.Move(f, to, true); n++; continue; }
+                    if (mode == "skip" && Duplicates.Hash(to) is { } h && h == Duplicates.Hash(f)) { File.Delete(f); continue; }
+                }
+                to = Net.UniquePath(to);
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                File.Move(f, to); n++;
+            }
+            catch { }
+        }
+        foreach (var d in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories).OrderByDescending(x => x.Length).ToList())
+            try { if (!Directory.EnumerateFileSystemEntries(d).Any()) Directory.Delete(d); } catch { }
+        return n;
+    }
+
+    // If the app was closed or crashed while files were still in staging, put them in <save folder>\Recovered at the next start.
+    void RecoverIncoming()
+    {
+        try
+        {
+            Net.CleanPartials();
+            var root = IncomingRoot;
+            var old = Directory.Exists(root) ? Directory.GetDirectories(root) : Array.Empty<string>();
+            if (old.Length == 0) return;
+            var target = Path.Combine(dest, "Recovered");
+            _ = Task.Run(() =>
+            {
+                foreach (var d in old) { try { MoveStaged(d, target); Directory.Delete(d, true); } catch { } }
+            });
+        }
+        catch { }
+    }
+
+    void SetRxState(string text) => RxStateText.Text = text;
+
+    // waiting view (only code / QR) <-> full-screen live view (particles + transfer data)
+    void ShowRxLive(bool live)
+    {
+        RxWaitView.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
+        RxLiveView.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
+        if (live) StopQrSpin(); else if (PhoneCard.Visibility == Visibility.Visible) StartQrSpin();
+        if (live) { RxLiveView.UpdateLayout(); UpdateStageCenter(); }
+        UpdateHeaderStage();
+    }
+
+    void ShowRxResult(bool on)
+    {
+        var v = on ? Visibility.Visible : Visibility.Collapsed;
+        RxResultHead.Visibility = v; RxResult.Visibility = v; RxResDetails.Visibility = v;
+    }
+
+    // details panel (file, format, size, speed...) sits at the bottom. While receiving it shows for a few seconds and hides by itself;
+    // hover / tap on the device icon (or on the panel) shows it again. After the transfer ends it stays (result + buttons).
+    void ShowRxPanel(bool show) { RxBottom.Opacity = show ? 1 : 0; RxBottom.IsHitTestVisible = show; }
+    void PulseRxPanel() { ShowRxPanel(true); rxPanelTimer.Stop(); rxPanelTimer.Interval = TimeSpan.FromSeconds(4); rxPanelTimer.Start(); }
+    void RxBottom_PointerEntered(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) { rxHover = true; rxPanelTimer.Stop(); }
+    void RxBottom_PointerExited(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) { rxHover = false; if (rxReceiving) { rxPanelTimer.Interval = TimeSpan.FromSeconds(1.5); rxPanelTimer.Start(); } }
+
+    // the device icon keeps ONE fixed place: in the free space above the (maximum height) details panel, so it never jumps when the panel changes
+    void RxLive_SizeChanged(object s, SizeChangedEventArgs e) => UpdateStageCenter();
+    void RxBottom_SizeChanged(object s, SizeChangedEventArgs e) { }
+    void UpdateStageCenter()
+    {
+        double h = RxLiveView.ActualHeight; if (h <= 0) return;
+        double top = 104, bottom = h - 300;                   // 104 = header (48) + status chips; ~300 px reserved for the details panel
+        double center = bottom > top + 160 ? (top + bottom) / 2 : Math.Max(120, h * 0.3);
+        Particle.CenterFraction = Math.Clamp(center / h, 0.15, 0.5);
+    }
 
     void StartReceiving(bool phone)
     {
         StopAll(); int gen = ++rxGen;
-        phoneMode = phone; rxFatal = false;
+        phoneMode = phone; rxFatal = false; savedTo = "";
+        try { stage = NewStage(); } catch { stage = ""; }
+        string recvDir = stage != "" ? stage : dest;   // fallback: save straight into the default folder
         var code = RandomNumberGenerator.GetInt32(1000000).ToString("D6");
-        CodeText.Text = code; DestText.Text = dest;
+        CodeText.Text = code;
         CodeCard.Visibility = phone ? Visibility.Collapsed : Visibility.Visible;
         PhoneCard.Visibility = Visibility.Collapsed;
-        RxTitle.Text = phone ? "Receive from phone or tablet" : "Ready to receive";
+        RxTitle.Text = phone ? "Scan to send files" : "Ready to receive";
         RxName.Text = $"Visible as {DeviceName}  •  {Net.LocalIp()}";
-        ResetRxView(phone ? "Scan the QR code with your phone camera" : "Waiting for the other laptop…");
+        RxName.Visibility = phone ? Visibility.Collapsed : Visibility.Visible;
+        ResetRxView(phone ? "" : "Waiting for the other laptop…");
         ShowPage(RxPage);
         Action<RxEvent> raise = ev => DispatcherQueue.TryEnqueue(() => { if (gen == rxGen) OnRxEvent(ev); });
         Action<Prog> prog = p => OnRxProg(p, gen);
         if (phone)
         {
-            web = new WebShare(code, dest, DeviceName, raise, prog);
+            web = new WebShare(code, recvDir, DeviceName, raise, prog);
             try { web.Start(); ShowQr($"http://{Net.LocalIp()}:{WebShare.Port}/?c={code}"); }
-            catch (Exception ex) { web = null; RxStatus.Text = "Could not start phone sharing: " + ex.Message; SetRxState("Error"); }
+            catch (Exception ex) { web = null; RxStatus.Text = "Could not start phone sharing: " + ex.Message; }
             return;
         }
-        rx = new Receiver(code, dest, raise, prog, DeviceName);
+        rx = new Receiver(code, recvDir, raise, prog, DeviceName);
         rx.Start();
     }
 
     void ResetRxView(string status)
     {
         rxReceiving = false; rxConnected = false; rxTimer.Stop();
-        Particle.Start();
-        RxResult.Visibility = Visibility.Collapsed; RxProgCard.Visibility = Visibility.Collapsed; RxNote.Visibility = Visibility.Collapsed;
+        Particle.Stop(); ShowRxLive(false); rxPanelTimer.Stop(); rxPanelOk = false; ShowRxPanel(false);
+        ShowRxResult(false); RxProgCard.Visibility = Visibility.Collapsed; RxCancelBtn.Visibility = Visibility.Collapsed;
+        InstallBtn.Visibility = Visibility.Collapsed; RxNote.Visibility = Visibility.Collapsed;
         RxDevice.Text = RxFile.Text = RxFormat.Text = RxSize.Text = RxFiles.Text = "—";
-        RxBar.Value = 0; RxPercent.Text = "0%"; RxChangeBtn.IsEnabled = true; RxCancelBtn.IsEnabled = true;
+        RxBar.Value = 0; RxPercent.Text = "0%"; RxCancelBtn.IsEnabled = true;
         RxStatus.Text = status; SetRxState("Waiting");
     }
 
@@ -561,10 +951,10 @@ public sealed partial class MainWindow : Window
         if (!rxReceiving) EnterReceiving();
         double pct = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
         double speed = rxRate.Update(p.Done, Environment.TickCount64);
-        RxBar.Value = pct; RxPercent.Text = $"{pct:0}%";
-        RxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}";
+        RxBar.Value = pct; RxPercent.Text = $"{pct:0}%"; Particle.SetProgress(pct);
+        RxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)} ({Fmt(Math.Max(0, p.Total - p.Done))} left)";
         RxSpeed.Text = speed > 0 ? Fmt(speed) + "/s" : "—";
-        RxEta.Text = "ETA " + AppInfo.Eta(p.Total - p.Done, speed);
+        RxEta.Text = "Estimated time: " + AppInfo.Eta(p.Total - p.Done, speed) + (p.Count > 0 ? $"  •  {Fmt(p.FileSize)}  •  File {p.Index} of {p.Count} ({Math.Max(0, p.Count - p.Index)} more after this)" : "");
         RxSize.Text = Fmt(p.Total);
         if (!string.IsNullOrEmpty(p.File)) { RxFile.Text = p.File; RxFormat.Text = AppInfo.FormatOf(p.File); }
         if (p.Count > 0) RxFiles.Text = $"{p.Index} of {p.Count}";
@@ -572,10 +962,10 @@ public sealed partial class MainWindow : Window
 
     void EnterReceiving()
     {
-        if (!rxConnected) { rxConnected = true; Particle.Start(); Particle.Connect(); }   // e.g. 2nd phone batch without a new Connected event
-        rxReceiving = true; rxRate.Reset(); rxStartMs = Environment.TickCount64;
-        RxResult.Visibility = Visibility.Collapsed; RxProgCard.Visibility = Visibility.Visible;
-        RxCancelBtn.IsEnabled = true; RxChangeBtn.IsEnabled = false;
+        if (!rxConnected) { rxConnected = true; ShowRxLive(true); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect(); }   // e.g. 2nd phone batch without a new Connected event
+        rxReceiving = true; rxPanelOk = true; Particle.BeginTransfer(); Particle.SetProgress(0); PulseRxPanel(); rxRate.Reset(); rxStartMs = Environment.TickCount64;
+        ShowRxResult(false); InstallBtn.Visibility = Visibility.Collapsed;
+        RxProgCard.Visibility = Visibility.Visible; RxCancelBtn.Visibility = Visibility.Visible; RxCancelBtn.IsEnabled = true;
         RxStatus.Text = $"Receiving from {(peerName == "" ? "device" : peerName)}…"; SetRxState("Receiving");
     }
 
@@ -588,11 +978,12 @@ public sealed partial class MainWindow : Window
                 break;
             case RxState.Connected:
                 peerName = ev.Device; peerType = ev.DeviceType; rxCount = ev.Count; rxTotal = ev.Total;
-                RxNote.Visibility = Visibility.Collapsed; RxResult.Visibility = Visibility.Collapsed;
+                RxNote.Visibility = Visibility.Collapsed; ShowRxResult(false); InstallBtn.Visibility = Visibility.Collapsed;
                 RxDevice.Text = $"{peerName} • {peerType}";
                 if (rxTotal > 0) RxSize.Text = Fmt(rxTotal);
                 if (rxCount > 0) RxFiles.Text = $"0 of {rxCount}";
-                rxConnected = true; Particle.Connect();
+                rxConnected = true;
+                ShowRxLive(true); rxPanelOk = false; ShowRxPanel(false); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect();   // only the centred device icon (no particles yet); particles + details start with the transfer
                 RxStatus.Text = ev.Message; SetRxState("Connected");
                 break;
             case RxState.Receiving:
@@ -609,13 +1000,18 @@ public sealed partial class MainWindow : Window
         if (ev.Device != "") peerName = ev.Device;
         rxReceiving = false; rxConnected = false; rxTimer.Stop(); terminalAt = Environment.TickCount64;
         Interlocked.Exchange(ref rxLatest, null);
-        RxProgCard.Visibility = Visibility.Collapsed; RxChangeBtn.IsEnabled = true;
+        RxProgCard.Visibility = Visibility.Collapsed; RxCancelBtn.Visibility = Visibility.Collapsed;
         rxFatal = ev.State == RxState.Failed && ev.Message.StartsWith("Cannot listen");
 
         if (ev.State == RxState.Disconnected && !was)   // phone page closed before sending anything: just go back to waiting
-        { ResetRxView(ev.Message + ". Waiting…"); return; }
+        { ResetRxView(phoneMode ? "" : ev.Message + ". Waiting…"); return; }
+
+        bool wasLive = RxLiveView.Visibility == Visibility.Visible;
+        ShowRxLive(true); rxPanelTimer.Stop(); rxPanelOk = true; ShowRxPanel(true); if (!wasLive) { Particle.Start(); Particle.SetDevice(peerType); }
+        int gen = rxGen; string st = stage;
 
         string title, msg, details, glyph; Brush dot; string hist;
+        RxOpenBtn.Visibility = Visibility.Collapsed; InstallBtn.Visibility = Visibility.Collapsed;
         if (ev.State == RxState.Complete)
         {
             Particle.Complete(); hist = "Completed"; glyph = "\uE73E"; dot = Res("OkBrush");
@@ -625,37 +1021,94 @@ public sealed partial class MainWindow : Window
             var exts = files.Select(f => AppInfo.FormatOf(f.Name)).Distinct().ToList();
             string fmt = files.Count == 1 ? AppInfo.FormatOf(files[0].Name) : exts.Count == 0 ? "—" : string.Join(", ", exts.Take(3)) + (exts.Count > 3 ? "…" : "");
             title = "Transfer Complete"; msg = ev.Message;
-            details = $"File: {name}\nFormat: {fmt}\nTotal size: {Fmt(size)}\nFrom: {peerName}\nSaved to: {dest}";
+            if (ev.Problems is { Count: > 0 } bad) { hist = "Partial"; title = "Completed with problems"; msg += "\nNot saved:\n" + Some(bad); }
+            if (ev.Files?.Any(x => x.Name.StartsWith("MoveIt-Clipboard")) == true) msg += $"\nClipboard text received from {peerName}. After saving, use Settings > Copy received text.";
+            details = "Choose where to save the files…";
             RxSize.Text = Fmt(size); RxFile.Text = name; RxFormat.Text = fmt;
             HistoryStore.Add(new HistoryEntry(DateTime.Now, "Received", peerName == "" ? "Device" : peerName, files.Count, size, hist));
             SetRxState("Complete"); RxStatus.Text = "Complete";
-            RxOpenBtn.Visibility = Visibility.Visible;
-            InstallBtn.Visibility = File.Exists(Path.Combine(dest, "AppList", "apps.json")) ? Visibility.Visible : Visibility.Collapsed;
             RxAgainBtn.Content = "Receive more";
-            if (cfg.OpenWhenDone) OpenDest();
+            _ = OfferClipboardThen(files, st, peerName, () => SaveReceivedAsync(files.Count, st, gen));   // asks where to save, then moves the files there
         }
         else
         {
-            Particle.Dim(); InstallBtn.Visibility = Visibility.Collapsed; RxOpenBtn.Visibility = Visibility.Visible;
-            if (ev.State == RxState.Cancelled) { hist = "Cancelled"; title = "Transfer cancelled"; glyph = "\uE711"; dot = Res("WarnBrush"); details = "Files that finished before the cancel are kept. The file in progress was deleted."; SetRxState("Cancelled"); }
+            Particle.Error();   // cancelled / failed / disconnected: red stage + red X
+            if (ev.State == RxState.Cancelled) { hist = "Cancelled"; title = "Transfer cancelled"; glyph = "\uE711"; dot = Res("ErrBrush"); details = "Files that finished before the cancel are kept. The file in progress was deleted."; SetRxState("Cancelled"); }
             else if (ev.State == RxState.Disconnected) { hist = "Disconnected"; title = "Device disconnected"; glyph = "\uE7BA"; dot = Res("ErrBrush"); details = "The connection dropped (WiFi off or out of range). Files that finished are kept."; SetRxState("Disconnected"); }
             else { hist = "Failed"; title = "Transfer failed"; glyph = "\uE7BA"; dot = Res("ErrBrush"); details = "Check that both devices are on the same WiFi, then try again."; SetRxState("Failed"); }
-            msg = ev.Message; RxStatus.Text = title;
+            msg = ev.Message + (was ? $"\nAt stop: {RxFile.Text}  •  {RxStat.Text}" : ""); RxStatus.Text = title;
             RxAgainBtn.Content = "Try again";
             if (was || ev.State != RxState.Failed || !rxFatal)
                 HistoryStore.Add(new HistoryEntry(DateTime.Now, "Received", peerName == "" ? "Device" : peerName, 0, rxTotal, hist));
+            _ = FlushAfterStopAsync(st, gen);   // finished files go to the default save folder
         }
+        if (was) SaveSimpleReport("Receive", peerName == "" ? "Device" : peerName, DeviceName, DateTime.Now.AddMilliseconds(rxStartMs - Environment.TickCount64), rxCount, ev.Files?.Count, ev.Problems?.Count, null, rxTotal, hist, ev.Problems);
         RxResIcon.Glyph = glyph; RxResDot.Fill = dot; RxResTitle.Text = title; RxResMsg.Text = msg; RxResDetails.Text = details;
-        RxResult.Visibility = Visibility.Visible;
+        ShowRxResult(true);
     }
 
-    void OpenDest() { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dest}\"") { UseShellExecute = true }); } catch { } }
+    // After a COMPLETE transfer: ask where to save, then move the files from the staging folder.
+    async Task SaveReceivedAsync(int count, string stageDir, int gen)
+    {
+        string target = dest;
+        try
+        {
+            if (stageDir != "" && count > 0 && !dialogOpen)
+            {
+                dialogOpen = true;
+                try
+                {
+                    var dlg = new ContentDialog
+                    {
+                        Title = "Where should we save the files?",
+                        Content = new TextBlock { Text = $"{count} file{(count == 1 ? "" : "s")} received.\nDefault folder:\n{dest}", TextWrapping = TextWrapping.Wrap },
+                        PrimaryButtonText = "Save to default folder", SecondaryButtonText = "Choose another folder…",
+                        DefaultButton = ContentDialogButton.Primary, XamlRoot = Content.XamlRoot, RequestedTheme = RootGrid.RequestedTheme
+                    };
+                    if (await dlg.ShowAsync() == ContentDialogResult.Secondary)
+                    {
+                        var picker = Init(new FolderPicker()); picker.FileTypeFilter.Add("*");
+                        var f = await picker.PickSingleFolderAsync();
+                        if (f != null) target = f.Path;
+                    }
+                }
+                finally { dialogOpen = false; }
+            }
+            var (mode, note) = await ChooseConflictMode(stageDir, target);
+            if (stageDir != "") await Task.Run(() => MoveStaged(stageDir, target, mode));
+            savedTo = target;
+            if (gen != rxGen) return;
+            RxResDetails.Text = $"Saved to: {target}{note}";
+            RxOpenBtn.Visibility = Visibility.Visible;
+            InstallBtn.Visibility = File.Exists(Path.Combine(target, "AppList", "apps.json")) ? Visibility.Visible : Visibility.Collapsed;
+            if (cfg.OpenWhenDone) OpenDest();
+        }
+        catch (Exception ex)
+        {
+            if (gen == rxGen) RxResDetails.Text = "Could not save the files: " + ex.Message + (stageDir != "" ? "\nThey are still in: " + stageDir : "");
+        }
+    }
+
+    // After cancelled / failed / disconnected: finished files are kept in the default save folder.
+    async Task FlushAfterStopAsync(string stageDir, int gen)
+    {
+        if (stageDir == "") return;
+        var target = dest; int n = 0;
+        try { n = await Task.Run(() => MoveStaged(stageDir, target)); } catch { }
+        if (n > 0)
+        {
+            savedTo = target;
+            if (gen == rxGen) { RxResDetails.Text += $"\nFinished files saved to: {target}"; RxOpenBtn.Visibility = Visibility.Visible; }
+        }
+    }
+
+    void OpenDest() { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{(savedTo != "" ? savedTo : dest)}\"") { UseShellExecute = true }); } catch { } }
 
     void RxOpen_Click(object s, RoutedEventArgs e) => OpenDest();
-    void RxAgain_Click(object s, RoutedEventArgs e) { if (rxFatal) StartReceiving(phoneMode); else ResetRxView(phoneMode ? "Scan the QR code with your phone camera" : "Waiting for the other laptop…"); }
+    void RxAgain_Click(object s, RoutedEventArgs e) { savedTo = ""; if (rxFatal) StartReceiving(phoneMode); else ResetRxView(phoneMode ? "" : "Waiting for the other laptop…"); }
     async void RxDone_Click(object s, RoutedEventArgs e) { rxReceiving = false; await GoBackAsync(); }
 
-    void CancelRx() { RxCancelBtn.IsEnabled = false; RxStatus.Text = "Cancelling…"; if (phoneMode) web?.CancelTransfer(); else rx?.CancelTransfer(); }
+    void CancelRx() { RxCancelBtn.IsEnabled = false; RxStatus.Text = "Cancelling…"; SetRxState("Cancelling…"); if (phoneMode) web?.CancelTransfer(); else rx?.CancelTransfer(); }
 
     async void RxCancel_Click(object s, RoutedEventArgs e)
     {
@@ -670,15 +1123,28 @@ public sealed partial class MainWindow : Window
         var ms = new InMemoryRandomAccessStream();
         await ms.WriteAsync(png.AsBuffer()); ms.Seek(0);
         var bi = new BitmapImage(); await bi.SetSourceAsync(ms);
-        QrImg.Source = bi; PhoneUrl.Text = url.Split('?')[0]; PhoneCard.Visibility = Visibility.Visible;
+        QrImg.Source = bi; PhoneCard.Visibility = Visibility.Visible; StartQrSpin();
+        shareUrl = url; RxLink.Text = url.Replace("http://", "");
     }
 
-    async void ChangeDest_Click(object s, RoutedEventArgs e)
+    // slowly rotating gradient ring around the QR code
+    Storyboard? qrSb;
+    void StartQrSpin()
     {
-        if (rxReceiving) return;
-        var p = Init(new FolderPicker()); p.FileTypeFilter.Add("*");
-        var f = await p.PickSingleFolderAsync();
-        if (f != null) { dest = f.Path; cfg.SaveFolder = dest; SaveSettings(); StartReceiving(phoneMode); }
+        if (qrSb != null) return;
+        var a = new DoubleAnimation { From = 0, To = 360, Duration = TimeSpan.FromSeconds(7), RepeatBehavior = RepeatBehavior.Forever, EnableDependentAnimation = true };
+        Storyboard.SetTarget(a, QrSpin); Storyboard.SetTargetProperty(a, "Angle");
+        qrSb = new Storyboard(); qrSb.Children.Add(a); qrSb.Begin();
+    }
+    void StopQrSpin() { qrSb?.Stop(); qrSb = null; }
+
+    string shareUrl = "";
+    async void CopyLink_Click(object s, RoutedEventArgs e)
+    {
+        if (shareUrl == "") return;
+        var dp = new Windows.ApplicationModel.DataTransfer.DataPackage(); dp.SetText(shareUrl);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+        CopyLinkText.Text = "Copied ✓"; await Task.Delay(1800); CopyLinkText.Text = "Copy link";
     }
 
     // ---------- setup (first run) ----------
@@ -766,9 +1232,18 @@ public sealed partial class MainWindow : Window
     }
 
     // ---------- install apps on the new laptop ----------
-    void InstallApps_Click(object s, RoutedEventArgs e)
+    async void InstallApps_Click(object s, RoutedEventArgs e)
     {
-        var json = Path.Combine(dest, "AppList", "apps.json");
+        var folder = Path.Combine(savedTo != "" ? savedTo : dest, "AppList");
+        var json = Path.Combine(folder, "apps.json");
+        string summary = "";
+        try
+        {
+            var oldApps = SoftwareInventory.ParseExport(Path.Combine(folder, "installed_apps.txt"));
+            if (oldApps.Count > 0) summary = "\n\nCompared with this laptop: " + SoftwareInventory.Summary(SoftwareInventory.Compare(oldApps, SoftwareInventory.ReadLocal()));
+        }
+        catch { }
+        if (!await Confirm("Install apps from the old laptop?", "A window will open and winget will install the apps from the old laptop's list from official winget sources. Some apps may still need their own sign-in or licence. Nothing is installed unless you continue." + summary, "Install", "Cancel")) return;
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe",
