@@ -4,7 +4,7 @@ namespace MoveIt;
 
 public partial class App : Application
 {
-    Window? w;
+    MainWindow? w;
     static Mutex? single;   // held for the whole run: a second launch finds it and just brings the first window forward
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowW(string? cls, string title);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
