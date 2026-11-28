@@ -1,384 +1,169 @@
 using System.Diagnostics;
-using System.Numerics;
-using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
-using WColor = Windows.UI.Color;
+using Microsoft.UI.Xaml.Shapes;
 
 namespace MoveIt;
 
-// Immersive transfer light, drawn with Composition radial gradients (smooth, GPU):
-//   - a multi-colour aura hangs from the top edge and drifts slowly
-//   - soft glowing particles fly in from the whole top edge (left / centre / right) towards the device icon and vanish into it
-//   Connect()       device connected -> icon sits in the CENTRE, soft aura only. NO particles yet.
-//   BeginTransfer() first bytes arrive -> icon glides up to its transfer spot, particles start flying into it
-//   Error()         cancelled / failed -> every particle (and a burst of new ones) is thrown OUT of the icon
-//   Complete() all received     -> green aura, check badge
-//   Error()    cancelled/failed -> RED wash over the stage + red badge (also used by Dim())
+// Light particles that flow top to bottom. Driven by real connection / transfer states:
+//   Start()    waiting for a device  -> calm downward flow
+//   Connect()  device connected      -> particles converge on the connection point, success badge, then faster flow
+//   Complete() all files received    -> particles converge, glowing check stays
+//   Dim()      cancelled / failed    -> flow slows and fades
+// Only runs a frame loop while something is moving, so it costs nothing when idle.
 public sealed partial class ParticleFlow : UserControl
 {
-    enum Mode { Off, Idle, Linked, Active, Complete, Error }
-    enum Pal { Blue = 0, Green = 1, Red = 2 }
+    enum Mode { Off, Idle, Active, Converge, Complete }
+    sealed class P { public Rectangle El = null!; public CompositeTransform T = null!; public double X, Y, V, Len, W, Phase, Xr, Base; }
 
-    sealed class Dot
-    {
-        public SpriteVisual V = null!; public double Age, Life, X0, Y0, Tx, Ty, Size, Wob, Ph, Strength; public bool Alive;
-        public double Px, Py, Sz, Op;                                      // last drawn position / size / opacity (start point when thrown out)
-        public bool Out; public double OAge, OLife, Sx, Sy, Ex, Ey, Op0, Sz0;   // "thrown out of the icon" state
-    }
-    sealed class AuraSet { public ContainerVisual Root = null!; public SpriteVisual[] Blobs = null!; public double Weight; }
-
-    // aura layout: peak, anchor x/y (fractions of w/h), size x/y (fractions)
-    static readonly (double Peak, double Ax, double Ay, double Sx, double Sy)[] Defs =
-    {
-        (0.90, 0.25, -0.02, 1.30, 0.95), (0.70, 0.75, -0.02, 1.25, 0.85), (0.80, 0.50, 0.00, 1.00, 0.60), (0.45, 0.90, 0.06, 0.80, 0.50),
-        (0.85, 0.50, -0.03, 0.70, 0.22)   // white hot-spot on the top edge
-    };
-    static readonly (byte R, byte G, byte B)[][] AuraCols =
-    {
-        new (byte, byte, byte)[] { (59, 130, 246), (139, 92, 246), (34, 211, 238), (236, 72, 153), (235, 245, 255) },
-        new (byte, byte, byte)[] { (16, 185, 129), (45, 212, 191), (52, 211, 153), (134, 239, 172), (236, 253, 245) },
-        new (byte, byte, byte)[] { (239, 68, 68), (249, 115, 22), (244, 63, 94), (251, 146, 60), (255, 236, 236) }
-    };
-    static readonly (byte R, byte G, byte B)[][] DotCols =
-    {
-        new (byte, byte, byte)[] { (125, 211, 252), (96, 165, 250), (167, 139, 250), (103, 232, 249) },
-        new (byte, byte, byte)[] { (52, 211, 153), (110, 231, 183), (125, 211, 252), (167, 243, 208) },
-        new (byte, byte, byte)[] { (248, 113, 113), (251, 146, 60), (244, 63, 94), (252, 165, 165) }
-    };
-
-    readonly Compositor comp;
-    readonly ContainerVisual root;
-    readonly CompositionRoundedRectangleGeometry clipGeo;
-    readonly SpriteVisual wash, badgeGlow;
-    const int PoolSize = 110;
-    readonly List<Dot> pool = new();
-    AuraSet? cur, prev;
-    Pal pal = Pal.Blue;
-
-    readonly Random rnd = new(); readonly Stopwatch clock = Stopwatch.StartNew();
-    Mode mode = Mode.Off;
-    double modeT, last, w = 1, h = 1, cx, cy, cyT;   // cy = icon centre now, cyT = its transfer spot (CenterFraction)
-    double glow, glowTarget, dim = 1, dimTarget = 1, flash, hue, interval = 0.14, spawnIn, burstIn, washT, washTarget, kick; int burst;
+    readonly List<P> ps = new(); readonly Random rnd = new(); readonly Stopwatch clock = Stopwatch.StartNew();
+    readonly LinearGradientBrush[] brushes;
+    Mode mode = Mode.Off; double modeT, last, w = 1, h = 1, cx, cy, speed = 1, speedTarget = 1, glow, glowTarget, dim = 1, dimTarget = 1;
     bool hooked; Storyboard? badgeSb;
 
-    // where the badge sits, as a fraction of the control's height
-    double centerFraction = 0.42;
-    public double CenterFraction { get => centerFraction; set { centerFraction = value; UpdateCenter(); } }
+    // where particles gather, as a fraction of the control's height
+    public double CenterFraction { get; set; } = 0.42;
 
     public ParticleFlow()
     {
         InitializeComponent();
-        comp = ElementCompositionPreview.GetElementVisual(FxHost).Compositor;
-        root = comp.CreateContainerVisual();
-        clipGeo = comp.CreateRoundedRectangleGeometry(); clipGeo.CornerRadius = Vector2.Zero;
-        root.Clip = comp.CreateGeometricClip(clipGeo);
-        ElementCompositionPreview.SetElementChildVisual(FxHost, root);
-
-        wash = Fx.Blob(comp, WColor.FromArgb(255, 239, 68, 68), 0.75); wash.Opacity = 0; root.Children.InsertAtBottom(wash);
-        badgeGlow = Fx.Blob(comp, WColor.FromArgb(255, 34, 211, 238), 0.55); badgeGlow.Size = new Vector2(340, 340); badgeGlow.Opacity = 0;
-        root.Children.InsertAbove(badgeGlow, wash);
-        for (int i = 0; i < PoolSize; i++)
-        {
-            var v = Fx.Blob(comp, WColor.FromArgb(255, 125, 211, 252), 0.95); v.IsVisible = false;
-            root.Children.InsertAtTop(v);
-            pool.Add(new Dot { V = v });
-        }
-        Fx.Fade(DevIcon);
+        brushes = new[] { Trail(34, 211, 238), Trail(59, 130, 246), Trail(186, 230, 253) }; // cyan, electric blue, ice blue
+        Unloaded += (_, _) => Unhook();
     }
 
-    // transfer spot of the icon = CenterFraction of the height. Before the transfer starts the icon sits in the true centre.
-    double TargetCy() => mode == Mode.Active || mode == Mode.Complete || mode == Mode.Error ? cyT : h * 0.5;
-
-    void UpdateCenter()
+    static LinearGradientBrush Trail(byte r, byte g, byte b)
     {
-        cx = w / 2; cyT = h * centerFraction;
-        if (!hooked) cy = TargetCy();
-        DevIcon.Margin = new Thickness(0, cyT - 76, 0, 0);
-        Badge.Margin = new Thickness(cx + 54 - 22, cyT + 54 - 22, 0, 0);   // lower-right of the icon (at the transfer spot)
-        ApplyIconY();
-    }
-
-    // the icon moves with a render transform (no layout pass per frame)
-    void ApplyIconY() { double dy = cy - cyT; DevT.TranslateY = dy; BadgeT.TranslateY = dy; }
-
-    // ---- device icon ----
-    public event Action<bool>? IconHover;   // true = pointer over the icon
-    public event Action? IconTapped;        // touch / click on the icon
-    void Dev_PointerEntered(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) => IconHover?.Invoke(true);
-    void Dev_PointerExited(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) => IconHover?.Invoke(false);
-    void Dev_Tapped(object s, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e) => IconTapped?.Invoke();
-
-    // "Phone" / "Tablet" / "Laptop" ... -> matching icon. Anything unknown = phone.
-    public void SetDevice(string type)
-    {
-        var t = (type ?? "").ToLowerInvariant();
-        DevGlyph.Glyph = t.Contains("tablet") && !t.Contains("phone") ? "\uE70A"
-                       : t.Contains("laptop") || t.Contains("pc") || t.Contains("computer") ? "\uE7F8"
-                       : "\uE8EA";
-    }
-
-    public void SetProgress(double pct) => DevRing.Value = Math.Clamp(pct, 0, 100);
-
-    void ShowIcon()
-    {
-        if (DevIcon.Visibility == Visibility.Visible && DevIcon.Opacity > 0.5) return;
-        DevIcon.Visibility = Visibility.Visible; DevIcon.Opacity = 1;   // plain fade-in (Fx.Fade), no bounce
-    }
-
-    void HideIcon() { DevIcon.Opacity = 0; DevIcon.Visibility = Visibility.Collapsed; DevRing.Value = 0; }
-
-    // ---- aura ----
-    AuraSet BuildAura(Pal p, double weight)
-    {
-        var set = new AuraSet { Root = comp.CreateContainerVisual(), Weight = weight, Blobs = new SpriteVisual[Defs.Length] };
-        for (int i = 0; i < Defs.Length; i++)
-        {
-            var c = AuraCols[(int)p][i];
-            set.Blobs[i] = Fx.Blob(comp, WColor.FromArgb(255, c.R, c.G, c.B), Defs[i].Peak);
-            set.Root.Children.InsertAtTop(set.Blobs[i]);
-        }
-        root.Children.InsertAbove(set.Root, wash);
-        set.Root.Opacity = (float)weight;
-        PlaceAura(set, clock.Elapsed.TotalSeconds);
-        return set;
-    }
-
-    void PlaceAura(AuraSet s, double now)
-    {
-        for (int i = 0; i < s.Blobs.Length; i++)
-        {
-            var d = Defs[i]; var v = s.Blobs[i];
-            float sw = (float)(d.Sx * w), sh = (float)(d.Sy * h);
-            double ph = i * 1.7;
-            float x = (float)(d.Ax * w + Math.Sin(now * 0.45 + ph) * w * 0.06 - sw / 2);
-            float y = (float)(d.Ay * h + Math.Cos(now * 0.38 + ph) * h * 0.02 - sh / 2);
-            v.Size = new Vector2(sw, sh); v.Offset = new Vector3(x, y, 0);
-        }
-    }
-
-    void SetPal(Pal p, bool instant)
-    {
-        if (p == pal && cur != null) return;
-        pal = p;
-        var c = AuraCols[(int)p][2];
-        Fx.Recolor(badgeGlow, WColor.FromArgb(255, c.R, c.G, c.B), 0.55);
-        DevRing.Foreground = new SolidColorBrush(WColor.FromArgb(255, AuraCols[(int)p][2].R, AuraCols[(int)p][2].G, AuraCols[(int)p][2].B));
-        if (prev != null) { root.Children.Remove(prev.Root); prev = null; }
-        if (cur != null) { if (instant) root.Children.Remove(cur.Root); else prev = cur; }
-        cur = BuildAura(p, instant ? 1 : 0);
+        var br = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(0, 1) };
+        br.GradientStops.Add(new GradientStop { Color = Windows.UI.Color.FromArgb(0, r, g, b), Offset = 0 });
+        br.GradientStops.Add(new GradientStop { Color = Windows.UI.Color.FromArgb(150, r, g, b), Offset = 0.7 });
+        br.GradientStops.Add(new GradientStop { Color = Windows.UI.Color.FromArgb(255, 232, 247, 255), Offset = 1 });
+        return br;
     }
 
     // ---- public states ----
-    public void Start()
-    {
-        HideBadge(); HideIcon(); KillDots(); SetPal(Pal.Blue, true);
-        SetMode(Mode.Idle); interval = 0.14; spawnIn = 0.3; burst = 0; flash = 0; washT = washTarget = 0; wash.Opacity = 0;
-        glowTarget = 0.2; dimTarget = 1; cy = TargetCy(); ApplyIconY(); Hook();
-    }
-    // device connected: icon in the centre, soft aura, NO particles yet
+    public void Start() { HideBadge(); foreach (var p in ps) Place(p, true); SetMode(Mode.Idle); speedTarget = 1; glowTarget = 0; dimTarget = 1; Hook(); }
     public void Connect()
     {
-        ShowIcon(); SetPal(Pal.Blue, false); SetMode(Mode.Linked);
-        burst = 0; flash = 1; glowTarget = 0.35; dimTarget = 1; washTarget = 0; PlayBadge(0); Hook();
+        SetMode(Mode.Converge); glowTarget = 1; dimTarget = 1; PlayBadge(false); Hook();
     }
-    // the transfer really started: icon glides to its transfer spot, particles fly in from the top edge
-    public void BeginTransfer()
-    {
-        if (mode == Mode.Active) return;
-        ShowIcon(); SetPal(Pal.Blue, false); SetMode(Mode.Active);
-        interval = 0.14; spawnIn = 0.6; burst = 14; burstIn = 0.3; flash = 0.5; glowTarget = 0.6; dimTarget = 1; washTarget = 0; Hook();
-    }
-    public void Complete()
-    {
-        ShowIcon(); DevRing.Value = 100; SetPal(Pal.Green, false); SetMode(Mode.Complete);
-        burst = 0; burstIn = 0; flash = 1; glowTarget = 0.9; dimTarget = 1; washTarget = 0; PlayBadge(1); Hook();
-    }
-    public void Error()
-    {
-        ShowIcon(); SetPal(Pal.Red, false); SetMode(Mode.Error);
-        Scatter();   // every particle flies OUT of the icon
-        burst = 0; burstIn = 0; flash = 1; glowTarget = 0.6; dimTarget = 1; washTarget = 1; PlayBadge(2); Hook();
-    }
-    public void Dim() => Error();   // old name: cancelled / failed
-    public void Stop()
-    {
-        SetMode(Mode.Off); HideBadge(); HideIcon(); Unhook(); KillDots();
-        badgeGlow.Opacity = 0; wash.Opacity = 0; if (cur != null) cur.Root.Opacity = 0;
-        glow = glowTarget = 0; burst = 0; flash = 0; washT = washTarget = 0;
-    }
+    public void Complete() { SetMode(Mode.Complete); glowTarget = 1; dimTarget = 1; PlayBadge(true); Hook(); }
+    public void Dim() { HideBadge(); if (mode == Mode.Off) return; SetMode(Mode.Idle); speedTarget = 0.5; glowTarget = 0; dimTarget = 0.35; Hook(); }
+    public void Stop() { SetMode(Mode.Off); HideBadge(); Unhook(); foreach (var p in ps) p.El.Opacity = 0; Glow.Opacity = 0; glow = glowTarget = 0; }
 
     void SetMode(Mode m) { mode = m; modeT = 0; }
-    void KillDots() { foreach (var d in pool) { d.Alive = false; d.Out = false; d.V.IsVisible = false; } }
 
-    // ---- layout ----
+    // ---- layout / particles ----
     void Host_SizeChanged(object s, SizeChangedEventArgs e)
     {
-        w = Math.Max(1, e.NewSize.Width); h = Math.Max(1, e.NewSize.Height);
-        clipGeo.Size = new Vector2((float)w, (float)h);
-        wash.Size = new Vector2((float)(w * 1.8), (float)(h * 1.6)); wash.Offset = new Vector3((float)(-w * 0.4), (float)(-h * 0.3), 0);
-        UpdateCenter();
-        var now = clock.Elapsed.TotalSeconds;
-        if (cur != null) PlaceAura(cur, now); if (prev != null) PlaceAura(prev, now);
+        w = Math.Max(1, e.NewSize.Width); h = Math.Max(1, e.NewSize.Height); cx = w / 2; cy = h * CenterFraction;
+        Host.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, w, h) };
+        Glow.Margin = new Thickness(0, cy - 170, 0, 0); Badge.Margin = new Thickness(0, cy - 46, 0, 0);
+        int n = (int)Math.Clamp(w / 22, 22, 54);
+        while (ps.Count > n) { Field.Children.Remove(ps[^1].El); ps.RemoveAt(ps.Count - 1); }
+        while (ps.Count < n) Add();
+        if (!hooked && mode != Mode.Off) { foreach (var p in ps) Place(p, true); }
     }
 
-    // ---- particles ----
-    static (byte R, byte G, byte B) Mix((byte R, byte G, byte B)[] p, double u)
+    void Add()
     {
-        u -= Math.Floor(u); double f = u * p.Length; int i = (int)f; var a = p[i % p.Length]; var b = p[(i + 1) % p.Length]; double k = f - i;
-        return ((byte)(a.R + (b.R - a.R) * k), (byte)(a.G + (b.G - a.G) * k), (byte)(a.B + (b.B - a.B) * k));
-    }
-
-    // one particle enters from somewhere along the top edge (left / centre / right) and flies into the device icon
-    void Spawn(double strength)
-    {
-        Dot? d = null; foreach (var x in pool) if (!x.Alive) { d = x; break; }
-        if (d == null) return;
-        double zone = rnd.NextDouble();
-        double fx = zone < 0.3 ? rnd.NextDouble() * 0.28 : zone < 0.6 ? 0.72 + rnd.NextDouble() * 0.28 : 0.3 + rnd.NextDouble() * 0.4;
-        d.X0 = fx * w; d.Y0 = -6 + rnd.NextDouble() * 22;
-        double ang = rnd.NextDouble() * Math.PI * 2, rad = rnd.NextDouble() * 22;
-        d.Tx = Math.Cos(ang) * rad; d.Ty = Math.Sin(ang) * rad;   // offset from the icon centre (the icon can move)
-        d.Size = 14 + rnd.NextDouble() * 18; d.Wob = 8 + rnd.NextDouble() * 20; d.Ph = rnd.NextDouble() * 6.28;
-        d.Age = 0; d.Life = 2.0 + rnd.NextDouble() * 1.2; d.Strength = strength; d.Alive = true; d.Out = false;
-        var c = Mix(DotCols[(int)pal], hue + rnd.NextDouble() * 0.12);
-        Fx.Recolor(d.V, WColor.FromArgb(255, c.R, c.G, c.B), 0.95);
-        d.V.Opacity = 0; d.V.IsVisible = true;
-    }
-
-    // cancelled / failed: all flying particles are pushed away from the icon (outwards, fading), plus a burst of new red ones
-    void Scatter()
-    {
-        double far = Math.Max(w, h) * 1.1;
-        foreach (var d in pool)
+        double depth = rnd.NextDouble();                       // 0 = far/slow/thin, 1 = near/fast/bright
+        var p = new P { W = 1.4 + depth * 2.2, Len = 26 + depth * 54, V = 70 + depth * 130, Phase = rnd.NextDouble() * 6.28, Base = 0.35 + depth * 0.65, Xr = rnd.NextDouble() };
+        p.T = new CompositeTransform { CenterY = p.Len };
+        p.El = new Rectangle
         {
-            if (!d.Alive || d.Out) continue;
-            double vx = d.Px - cx, vy = d.Py - cy, len = Math.Sqrt(vx * vx + vy * vy);
-            if (len < 1) { double a = rnd.NextDouble() * Math.PI * 2; vx = Math.Cos(a); vy = Math.Sin(a); len = 1; }
-            LaunchOut(d, d.Px, d.Py, vx / len, vy / len, far * (0.5 + rnd.NextDouble() * 0.6), Math.Max(d.Op, 0.5), Math.Max(d.Sz, 10));
-        }
-        for (int i = 0; i < 44; i++)
-        {
-            Dot? d = null; foreach (var x in pool) if (!x.Alive) { d = x; break; }
-            if (d == null) break;
-            double a = rnd.NextDouble() * Math.PI * 2, r0 = 30 + rnd.NextDouble() * 30, vx = Math.Cos(a), vy = Math.Sin(a);
-            LaunchOut(d, cx + vx * r0, cy + vy * r0, vx, vy, far * (0.35 + rnd.NextDouble() * 0.8), 0.9, 10 + rnd.NextDouble() * 18);
-        }
+            Width = p.W, Height = p.Len, RadiusX = p.W / 2, RadiusY = p.W / 2, Opacity = 0, IsHitTestVisible = false,
+            Fill = brushes[rnd.Next(brushes.Length)], RenderTransform = p.T
+        };
+        Field.Children.Add(p.El); ps.Add(p); Place(p, true);
     }
 
-    void LaunchOut(Dot d, double sx, double sy, double vx, double vy, double dist, double op, double sz)
+    // put a particle back above the top edge (spread = random depth above so streams look continuous)
+    void Place(P p, bool spread)
     {
-        d.Out = true; d.Alive = true; d.OAge = 0; d.OLife = 0.9 + rnd.NextDouble() * 0.8;
-        d.Sx = sx; d.Sy = sy; d.Ex = sx + vx * dist; d.Ey = sy + vy * dist; d.Op0 = op; d.Sz0 = sz;
-        var c = Mix(DotCols[(int)Pal.Red], rnd.NextDouble());
-        Fx.Recolor(d.V, WColor.FromArgb(255, c.R, c.G, c.B), 0.95);
-        d.V.IsVisible = true;
+        p.Xr = rnd.NextDouble(); p.X = p.Xr * w;
+        p.Y = spread ? -rnd.NextDouble() * h * 0.6 : -p.Len - rnd.NextDouble() * h * 0.25;
     }
 
     // ---- frame loop ----
     void Hook() { if (hooked) return; last = clock.Elapsed.TotalSeconds; CompositionTarget.Rendering += OnFrame; hooked = true; }
     void Unhook() { if (!hooked) return; CompositionTarget.Rendering -= OnFrame; hooked = false; }
 
+    static double Sm(double t) { t = Math.Clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+
     void OnFrame(object? sender, object e)
     {
         double now = clock.Elapsed.TotalSeconds, dt = Math.Min(now - last, 0.05); last = now;
         if (dt <= 0) return;
-        modeT += dt; hue += dt * 0.05;
-        double tcy = TargetCy(); cy += (tcy - cy) * Math.Min(1, dt * 4.5); if (Math.Abs(tcy - cy) < 0.2) cy = tcy; ApplyIconY();   // icon glides centre -> transfer spot
-        glow += (glowTarget - glow) * Math.Min(1, dt * 2.5);
-        dim += (dimTarget - dim) * Math.Min(1, dt * 3);
-        flash = Math.Max(0, flash - dt * 1.0);
-        washT += (washTarget - washT) * Math.Min(1, dt * 2.2);
+        modeT += dt;
+        double ease = Math.Min(1, dt * 3);
+        speed += (speedTarget - speed) * ease; glow += (glowTarget - glow) * Math.Min(1, dt * 2.5); dim += (dimTarget - dim) * ease;
 
-        if (burst > 0) { burstIn -= dt; if (burstIn <= 0) { Spawn(1.0); burst--; burstIn = 0.05; } }
-        else if (mode == Mode.Active)
-        {
-            spawnIn -= dt;
-            if (spawnIn <= 0) { Spawn(0.7 + rnd.NextDouble() * 0.3); spawnIn = interval * (0.7 + rnd.NextDouble() * 0.6); }
+        if (mode == Mode.Converge && modeT > 1.2)
+        {   // connection animation finished: continue as a livelier downward stream
+            mode = Mode.Active; modeT = 0; speedTarget = 1.7; speed = 0.5; glowTarget = 0.35;
+            foreach (var p in ps) Place(p, true);
         }
 
-        // particles: accelerate towards the icon on a slightly curved path, shrink, and fade out as they are absorbed
-        bool anyAlive = false; kick = Math.Max(0, kick - dt * 1.5);
-        foreach (var d in pool)
+        double scale = Math.Clamp(h / 700, 0.6, 1.6);
+        bool converging = mode == Mode.Converge || mode == Mode.Complete;
+        foreach (var p in ps)
         {
-            if (!d.Alive) continue;
-            if (d.Out)
-            {   // thrown out of the icon: fast start, slows down, fades
-                d.OAge += dt; double u = d.OAge / d.OLife;
-                if (u >= 1) { d.Alive = false; d.Out = false; d.V.IsVisible = false; continue; }
-                anyAlive = true;
-                double eo = 1 - Math.Pow(1 - u, 2.6), ox = d.Sx + (d.Ex - d.Sx) * eo, oy = d.Sy + (d.Ey - d.Sy) * eo, osz = d.Sz0 * (1 + 0.5 * u);
-                d.V.Size = new Vector2((float)osz, (float)osz); d.V.Offset = new Vector3((float)(ox - osz / 2), (float)(oy - osz / 2), 0);
-                d.V.Opacity = (float)Math.Clamp(d.Op0 * Math.Pow(1 - u, 1.2), 0, 1);
-                continue;
+            double a, sy = 1;
+            if (converging)
+            {
+                double k = (mode == Mode.Complete ? 2.0 : 3.2) * (0.75 + 0.5 * (p.Phase / 6.28));
+                double f = 1 - Math.Exp(-k * dt);
+                p.X += (cx - p.X) * f; p.Y += (cy - p.Y) * f;
+                double dist = Math.Sqrt((cx - p.X) * (cx - p.X) + (cy - p.Y) * (cy - p.Y));
+                sy = Math.Clamp(dist / (h * 0.45), 0.1, 1);
+                a = p.Base * Math.Min(1, dist / 70) * (p.Y < -p.Len ? 0 : 1);
             }
-            d.Age += dt; double t = d.Age / d.Life;
-            if (t >= 1) { d.Alive = false; d.V.IsVisible = false; kick = Math.Min(0.25, kick + 0.03); continue; }
-            anyAlive = true;
-            double ease = Math.Pow(t, 1.7), tx = cx + d.Tx, ty = cy + d.Ty, dx = tx - d.X0, dy = ty - d.Y0, len = Math.Max(1, Math.Sqrt(dx * dx + dy * dy));
-            double wob = Math.Sin(d.Ph + t * 5) * d.Wob * (1 - t);
-            double px = d.X0 + dx * ease - dy / len * wob, py = d.Y0 + dy * ease + dx / len * wob;
-            double sz = d.Size * (1 - 0.6 * t);
-            double fade = Math.Min(1, t / 0.12) * (t > 0.82 ? (1 - t) / 0.18 : 1), op = Math.Clamp(fade * d.Strength * dim, 0, 1);
-            d.Px = px; d.Py = py; d.Sz = sz; d.Op = op;
-            d.V.Size = new Vector2((float)sz, (float)sz); d.V.Offset = new Vector3((float)(px - sz / 2), (float)(py - sz / 2), 0);
-            d.V.Opacity = (float)op;
+            else
+            {
+                p.Y += p.V * speed * scale * dt;
+                p.X = p.Xr * w + Math.Sin(now * 0.9 + p.Phase) * 4;   // tiny sway, direction is always downward
+                if (p.Y - p.Len > h) Place(p, false);
+                double fadeIn = Sm((p.Y + p.Len * 0.2) / Math.Max(60, h * 0.12)), fadeOut = 1 - Sm((p.Y - h * 0.82) / Math.Max(1, h * 0.18));
+                a = p.Base * fadeIn * fadeOut * (mode == Mode.Active ? 1 : 0.8);
+            }
+            p.El.Opacity = Math.Clamp(a * dim, 0, 1);
+            p.T.ScaleY = sy; p.T.TranslateX = p.X - p.W / 2; p.T.TranslateY = p.Y - p.Len;
         }
 
-        // aura (cross-fades when the colour set changes)
-        double breathe = 0.06 * Math.Sin(now * 1.8);
-        double auraO = (mode == Mode.Error ? 0.6 : 0.3 + 0.5 * glow + breathe) + 0.5 * flash;
-        if (cur != null)
-        {
-            cur.Weight = Math.Min(1, cur.Weight + dt * 2.2); PlaceAura(cur, now);
-            cur.Root.Opacity = (float)Math.Clamp(auraO * cur.Weight * dim, 0, 1);
-        }
-        if (prev != null)
-        {
-            prev.Weight -= dt * 2.2; PlaceAura(prev, now);
-            if (prev.Weight <= 0) { root.Children.Remove(prev.Root); prev = null; }
-            else prev.Root.Opacity = (float)Math.Clamp(auraO * prev.Weight * dim, 0, 1);
-        }
-        wash.Opacity = (float)Math.Clamp(washT * (0.8 + 0.2 * Math.Sin(now * 2.0)), 0, 1);
-        badgeGlow.Offset = new Vector3((float)(cx - 170), (float)(cy - 170), 0);
-        badgeGlow.Opacity = (float)Math.Clamp((glow + kick + (mode == Mode.Active ? 0.06 * Math.Sin(now * 2.2) : 0)) * dim, 0, 1);
+        double breathe = mode == Mode.Active ? 0.08 * Math.Sin(now * 2.2) : 0;
+        Glow.Opacity = Math.Clamp(glow + breathe, 0, 1); GlowT.ScaleX = GlowT.ScaleY = 0.7 + 0.3 * glow;
 
-        // settled: stop using CPU (aura, check / red X stay)
-        if (!anyAlive && burst == 0 && flash <= 0 && prev == null && modeT > 3.5 && (mode == Mode.Complete || mode == Mode.Error)) Unhook();
+        if (mode == Mode.Complete && modeT > 3) Unhook();   // settled: stop using CPU, the check stays
     }
 
-    // ---- indicator: kind 0 = connected (fades), 1 = complete (stays), 2 = error / cancelled (stays) ----
-    void PlayBadge(int kind)
+    // ---- indicator ----
+    void PlayBadge(bool complete)
     {
         badgeSb?.Stop();
-        (byte, byte, byte) a = kind == 2 ? ((byte)220, (byte)38, (byte)38) : kind == 1 ? ((byte)16, (byte)185, (byte)129) : ((byte)47, (byte)128, (byte)237);
-        (byte, byte, byte) b = kind == 2 ? ((byte)248, (byte)113, (byte)113) : kind == 1 ? ((byte)52, (byte)211, (byte)153) : ((byte)34, (byte)211, (byte)238);
         BadgeFill.Fill = new LinearGradientBrush
         {
             StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(1, 1),
             GradientStops =
             {
-                new GradientStop { Color = WColor.FromArgb(255, a.Item1, a.Item2, a.Item3), Offset = 0 },
-                new GradientStop { Color = WColor.FromArgb(255, b.Item1, b.Item2, b.Item3), Offset = 1 }
+                new GradientStop { Color = complete ? Windows.UI.Color.FromArgb(255, 16, 185, 129) : Windows.UI.Color.FromArgb(255, 47, 128, 237), Offset = 0 },
+                new GradientStop { Color = complete ? Windows.UI.Color.FromArgb(255, 52, 211, 153) : Windows.UI.Color.FromArgb(255, 34, 211, 238), Offset = 1 }
             }
         };
-        BadgeIcon.Glyph = kind == 2 ? "\uE711" : "\uE73E";
         Badge.Visibility = Visibility.Visible;
         var sb = new Storyboard();
-        double b0 = kind == 0 ? 0.3 : 0.5;
         foreach (var prop in new[] { "ScaleX", "ScaleY" })
         {
-            var an = new DoubleAnimation { From = 0.4, To = 1, Duration = TimeSpan.FromSeconds(0.55), BeginTime = TimeSpan.FromSeconds(b0), EasingFunction = new BackEase { Amplitude = 0.5, EasingMode = EasingMode.EaseOut } };
-            Storyboard.SetTarget(an, BadgeT); Storyboard.SetTargetProperty(an, prop); sb.Children.Add(an);
+            var a = new DoubleAnimation { From = 0.4, To = 1, Duration = TimeSpan.FromSeconds(0.5), BeginTime = TimeSpan.FromSeconds(complete ? 0.8 : 0.5), EasingFunction = new BackEase { Amplitude = 0.5, EasingMode = EasingMode.EaseOut } };
+            Storyboard.SetTarget(a, BadgeT); Storyboard.SetTargetProperty(a, prop); sb.Children.Add(a);
         }
         var o = new DoubleAnimationUsingKeyFrames();
+        double b0 = complete ? 0.8 : 0.5;
         o.KeyFrames.Add(new DiscreteDoubleKeyFrame { KeyTime = TimeSpan.Zero, Value = 0 });
         o.KeyFrames.Add(new LinearDoubleKeyFrame { KeyTime = TimeSpan.FromSeconds(b0), Value = 0 });
         o.KeyFrames.Add(new LinearDoubleKeyFrame { KeyTime = TimeSpan.FromSeconds(b0 + 0.3), Value = 1 });
-        if (kind == 0)
+        if (!complete)
         {   // connection indicator: shown briefly, then hands over to the transfer view
             o.KeyFrames.Add(new LinearDoubleKeyFrame { KeyTime = TimeSpan.FromSeconds(b0 + 1.2), Value = 1 });
             o.KeyFrames.Add(new LinearDoubleKeyFrame { KeyTime = TimeSpan.FromSeconds(b0 + 1.7), Value = 0 });

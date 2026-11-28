@@ -19,7 +19,7 @@ public class AppSettings
 // One row in the Send file list
 public sealed class SendItem
 {
-    public string FullPath { get; init; } = "";
+    public string Path { get; init; } = "";
     public bool Folder { get; init; }
     public string Name { get; init; } = "";
     public string Detail { get; init; } = "";

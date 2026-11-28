@@ -2,15 +2,46 @@
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:MoveIt">
-  <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden" Background="{ThemeResource BgBrush}" PointerPressed="Root_PointerPressed" SizeChanged="Root_SizeChanged">
+  <Grid x:Name="RootGrid" KeyboardAcceleratorPlacementMode="Hidden" Background="{ThemeResource BgBrush}" PointerPressed="Root_PointerPressed">
     <Grid.KeyboardAccelerators>
       <KeyboardAccelerator Key="Escape" Invoked="Back_Accel"/>
       <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="Back_Accel"/>
     </Grid.KeyboardAccelerators>
-    <!-- Narrow/wide layout is applied in code (ApplyLayout in MainWindow.xaml.cs) -->
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup>
+        <!-- Wide (>= 760 px): cards and receive layout in 2 columns -->
+        <VisualState x:Name="Wide"><VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="760"/></VisualState.StateTriggers></VisualState>
+        <!-- Narrow: everything stacks in one column, no horizontal scrolling -->
+        <VisualState x:Name="Narrow">
+          <VisualState.StateTriggers><AdaptiveTrigger MinWindowWidth="0"/></VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="PagesHost.Padding" Value="14,0"/>
+            <Setter Target="HomeCol1.Width" Value="0"/>
+            <Setter Target="RxCard.(Grid.Row)" Value="1"/>
+            <Setter Target="RxCard.(Grid.Column)" Value="0"/>
+            <Setter Target="RxCard.Margin" Value="0,16,0,0"/>
+            <Setter Target="ChooseCol1.Width" Value="0"/>
+            <Setter Target="RxPhoneCard.(Grid.Row)" Value="1"/>
+            <Setter Target="RxPhoneCard.(Grid.Column)" Value="0"/>
+            <Setter Target="RxPhoneCard.Margin" Value="0,16,0,0"/>
+            <Setter Target="RxCol1.Width" Value="0"/>
+            <Setter Target="RxSide.(Grid.Row)" Value="1"/>
+            <Setter Target="RxSide.(Grid.Column)" Value="0"/>
+            <Setter Target="RxSide.Margin" Value="0,12,0,0"/>
+            <Setter Target="RxStage.Height" Value="250"/>
+            <Setter Target="ModeRadio.MaxColumns" Value="1"/>
+          </VisualState.Setters>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
 
-    <!-- soft aurora background (Composition, see AuroraBg.xaml.cs) -->
-    <local:AuroraBg x:Name="Aurora"/>
+    <!-- aurora background blobs, softened by the scrim below -->
+    <Grid IsHitTestVisible="False">
+      <Ellipse Width="560" Height="560" Fill="#FF1E6BFF" Opacity="0.55" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-160,-160,0,0"><Ellipse.RenderTransform><CompositeTransform x:Name="B1"/></Ellipse.RenderTransform></Ellipse>
+      <Ellipse Width="480" Height="480" Fill="#FF00D4FF" Opacity="0.4" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-160,0"><Ellipse.RenderTransform><CompositeTransform x:Name="B2"/></Ellipse.RenderTransform></Ellipse>
+      <Ellipse Width="520" Height="520" Fill="#FF7A4DFF" Opacity="0.45" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="120,0,0,-220"><Ellipse.RenderTransform><CompositeTransform x:Name="B3"/></Ellipse.RenderTransform></Ellipse>
+    </Grid>
+    <Border Background="{ThemeResource ScrimBrush}" IsHitTestVisible="False"/>
 
     <Grid>
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -39,6 +70,7 @@
       <Grid x:Name="PagesHost" Grid.Row="1" Padding="24,0">
         <!-- SETUP / ONBOARDING (first run) -->
         <Grid x:Name="SetupPage" Visibility="Collapsed">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <Grid MaxWidth="580" HorizontalAlignment="Center" Margin="0,0,0,16">
             <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <ScrollViewer>
@@ -102,76 +134,56 @@
 
         <!-- HOME -->
         <Grid x:Name="HomePage">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640" Spacing="28" Margin="0,8,0,28">
+            <StackPanel VerticalAlignment="Center" Spacing="24" Margin="0,8,0,28">
               <StackPanel Spacing="4" HorizontalAlignment="Center">
-                <Border Width="84" Height="84" CornerRadius="24" HorizontalAlignment="Center"><Border.Shadow><ThemeShadow/></Border.Shadow><Image Source="ms-appx:///Assets/logo.png"/></Border>
-                <TextBlock Text="MoveIt" FontSize="34" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                <Border Width="88" Height="88" CornerRadius="24" HorizontalAlignment="Center"><Border.Shadow><ThemeShadow/></Border.Shadow><Image Source="ms-appx:///Assets/logo.png"/></Border>
+                <TextBlock Text="MoveIt" Style="{StaticResource MiTitle}" HorizontalAlignment="Center" Margin="0,10,0,0"/>
                 <TextBlock Text="Move everything to your new laptop over WiFi" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
-                <Border CornerRadius="14" Padding="12,5" HorizontalAlignment="Center" Margin="0,12,0,0" Background="{ThemeResource GlassBrush}" BorderBrush="{ThemeResource GlassStroke}" BorderThickness="1">
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Ellipse Width="8" Height="8" Fill="{StaticResource OkBrush}" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="HomeInfo" FontSize="12" Opacity="0.85" VerticalAlignment="Center"/>
-                  </StackPanel>
-                </Border>
               </StackPanel>
-
-              <StackPanel Spacing="14" Margin="12,0">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="HomeCol1" Width="*"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <Button x:Name="SendCard" Style="{StaticResource CardButton}" Click="SendCard_Click" AutomationProperties.Name="Send files from this laptop">
-                  <Grid ColumnSpacing="18">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileBlue}"><FontIcon Glyph="&#xE898;" FontSize="28" Foreground="White"/></Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <TextBlock Text="Send" Style="{StaticResource MiHeading}"/>
-                      <TextBlock Text="Send files, folders or your whole setup to another laptop" Style="{StaticResource MiCaption}"/>
-                    </StackPanel>
-                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16" Opacity="0.55" VerticalAlignment="Center"/>
-                  </Grid>
+                  <StackPanel Spacing="8" HorizontalAlignment="Center">
+                    <Grid Width="68" Height="68" HorizontalAlignment="Center"><Ellipse><Ellipse.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF2F80ED" Offset="0"/><GradientStop Color="#FF56CCF2" Offset="1"/></LinearGradientBrush></Ellipse.Fill></Ellipse><FontIcon Glyph="&#xE898;" FontSize="30" Foreground="White"/></Grid>
+                    <TextBlock Text="Send" Style="{StaticResource MiHeading}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="From this laptop to another laptop" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                  </StackPanel>
                 </Button>
-                <Button x:Name="RxCard" Style="{StaticResource CardButton}" Click="RxCard_Click" AutomationProperties.Name="Receive files on this laptop">
-                  <Grid ColumnSpacing="18">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileGreen}"><FontIcon Glyph="&#xE896;" FontSize="28" Foreground="White"/></Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <TextBlock Text="Receive" Style="{StaticResource MiHeading}"/>
-                      <TextBlock Text="Get files from another laptop, or from your phone or tablet" Style="{StaticResource MiCaption}"/>
-                    </StackPanel>
-                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16" Opacity="0.55" VerticalAlignment="Center"/>
-                  </Grid>
+                <Button x:Name="RxCard" Grid.Column="1" Margin="16,0,0,0" Style="{StaticResource CardButton}" Click="RxCard_Click" AutomationProperties.Name="Receive files on this laptop">
+                  <StackPanel Spacing="8" HorizontalAlignment="Center">
+                    <Grid Width="68" Height="68" HorizontalAlignment="Center"><Ellipse><Ellipse.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF11998E" Offset="0"/><GradientStop Color="#FF38EF7D" Offset="1"/></LinearGradientBrush></Ellipse.Fill></Ellipse><FontIcon Glyph="&#xE896;" FontSize="30" Foreground="White"/></Grid>
+                    <TextBlock Text="Receive" Style="{StaticResource MiHeading}" HorizontalAlignment="Center"/>
+                    <TextBlock Text="On this laptop, from a laptop or phone" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                  </StackPanel>
                 </Button>
-              </StackPanel>
-
-              <StackPanel Spacing="6" HorizontalAlignment="Center">
-                <HyperlinkButton Click="OpenHistory_Click" HorizontalAlignment="Center"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE81C;" FontSize="14"/><TextBlock Text="Transfer history"/></StackPanel></HyperlinkButton>
-                <TextBlock Text="Private  •  No account  •  No cables" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
-              </StackPanel>
+              </Grid>
+              <HyperlinkButton Click="OpenHistory_Click" HorizontalAlignment="Center"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE81C;" FontSize="14"/><TextBlock Text="Transfer history"/></StackPanel></HyperlinkButton>
+              <TextBlock x:Name="HomeInfo" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
             </StackPanel>
           </ScrollViewer>
         </Grid>
 
-        <!-- SCAN / device discovery: radar centred in the page; the "nothing found" help appears BELOW in a reserved area (nothing jumps) -->
+        <!-- SCAN / device discovery -->
         <Grid x:Name="ScanPage" Visibility="Collapsed">
-          <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto" MinHeight="190"/></Grid.RowDefinitions>
-          <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="560" Spacing="14" Margin="0,8,0,8">
-              <Grid HorizontalAlignment="Center">
-                <!-- soft glow behind the radar -->
-                <Ellipse Width="330" Height="330" IsHitTestVisible="False">
-                  <Ellipse.Fill>
-                    <RadialGradientBrush>
-                      <GradientStop Color="#3338BDF8" Offset="0"/><GradientStop Color="#1A8B5CF6" Offset="0.55"/><GradientStop Color="#008B5CF6" Offset="1"/>
-                    </RadialGradientBrush>
-                  </Ellipse.Fill>
-                </Ellipse>
-                <Viewbox MaxWidth="290" MaxHeight="290"><local:Radar x:Name="ScanRadar"/></Viewbox>
-              </Grid>
-              <TextBlock x:Name="ScanTitle" Text="Looking for nearby laptops…" Style="{StaticResource MiTitle}" FontSize="24" HorizontalAlignment="Center" TextAlignment="Center"/>
-              <TextBlock Text="Open MoveIt on the other laptop and tap Receive, then choose Pairing code" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
+          <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="12" Margin="0,0,0,24">
+              <Viewbox MaxWidth="240" MaxHeight="240"><local:Radar x:Name="ScanRadar"/></Viewbox>
+              <TextBlock x:Name="ScanTitle" Text="Looking for nearby laptops…" Style="{StaticResource MiHeading}" HorizontalAlignment="Center" TextAlignment="Center"/>
+              <TextBlock Text="Open MoveIt on the other laptop and tap Receive" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
               <!-- loading state -->
-              <Border x:Name="ScanLoading" CornerRadius="16" Padding="14,7" HorizontalAlignment="Center" Background="{ThemeResource GlassBrush}" BorderBrush="{ThemeResource GlassStroke}" BorderThickness="1">
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                  <ProgressRing IsActive="True" Width="16" Height="16"/>
-                  <TextBlock Text="Searching your WiFi…" Style="{StaticResource MiCaption}" Opacity="0.9" VerticalAlignment="Center"/>
+              <StackPanel x:Name="ScanLoading" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                <ProgressRing IsActive="True" Width="20" Height="20"/>
+                <TextBlock Text="Searching your WiFi…" Style="{StaticResource MiCaption}" VerticalAlignment="Center"/>
+              </StackPanel>
+              <!-- empty state (after a few searches with nothing found) -->
+              <Border x:Name="ScanEmpty" Style="{StaticResource GlassCard}" Visibility="Collapsed" HorizontalAlignment="Stretch">
+                <StackPanel Spacing="8">
+                  <StackPanel Orientation="Horizontal" Spacing="10"><FontIcon Glyph="&#xE9CE;" FontSize="18"/><TextBlock Text="No laptop found yet" Style="{StaticResource MiSubhead}"/></StackPanel>
+                  <TextBlock Style="{StaticResource MiBody}" Opacity="0.8" Text="• Both laptops must be on the same WiFi network.&#x0A;• The other laptop must be on the Receive screen.&#x0A;• If Windows asked about network access, choose Allow.&#x0A;• Still nothing? Use the pairing code and IP address below."/>
                 </StackPanel>
               </Border>
               <GridView x:Name="DeviceGrid" IsItemClickEnabled="True" SelectionMode="None" ItemClick="Device_Click" HorizontalAlignment="Center">
@@ -190,27 +202,14 @@
                   </DataTemplate>
                 </GridView.ItemTemplate>
               </GridView>
+              <HyperlinkButton Content="Can't find it? Enter pairing code or IP address" Click="Manual_Click" HorizontalAlignment="Center"/>
             </StackPanel>
           </ScrollViewer>
-
-          <!-- below the radar: help (only after a few empty searches) + manual entry -->
-          <StackPanel Grid.Row="1" Spacing="10" HorizontalAlignment="Center" MaxWidth="560" VerticalAlignment="Top" Margin="0,0,0,12">
-            <Border x:Name="ScanEmpty" Style="{StaticResource GlassCard}" CornerRadius="20" Visibility="Collapsed" HorizontalAlignment="Stretch">
-              <Grid ColumnSpacing="14">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                <Border Width="44" Height="44" CornerRadius="14" VerticalAlignment="Top" Background="{StaticResource TileAmber}"><FontIcon Glyph="&#xE9CE;" FontSize="20" Foreground="White"/></Border>
-                <StackPanel Grid.Column="1" Spacing="6">
-                  <TextBlock Text="No laptop found yet" Style="{StaticResource MiSubhead}"/>
-                  <TextBlock Style="{StaticResource MiCaption}" Opacity="0.85" Text="•  Both laptops must be on the same WiFi network.&#x0A;•  The other laptop must be on the Receive screen.&#x0A;•  If Windows asked about network access, choose Allow.&#x0A;•  Still nothing? Use the pairing code and IP address."/>
-                </StackPanel>
-              </Grid>
-            </Border>
-            <HyperlinkButton Content="Can't find it? Enter pairing code or IP address" Click="Manual_Click" HorizontalAlignment="Center"/>
-          </StackPanel>
         </Grid>
 
         <!-- SEND -->
         <Grid x:Name="SendPage" Visibility="Collapsed">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="14" Margin="0,0,0,24">
               <TextBlock x:Name="SendTitle" Style="{StaticResource MiHeading}"/>
@@ -236,7 +235,7 @@
                               <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis"/>
                               <TextBlock Text="{x:Bind Detail}" Style="{StaticResource MiCaption}" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
-                            <Button Grid.Column="2" Tag="{x:Bind FullPath}" Click="RemoveItem_Click" Padding="8,6" CornerRadius="10" ToolTipService.ToolTip="Remove" AutomationProperties.Name="Remove from list"><FontIcon Glyph="&#xE711;" FontSize="12"/></Button>
+                            <Button Grid.Column="2" Tag="{x:Bind Path}" Click="RemoveItem_Click" Padding="8,6" CornerRadius="10" ToolTipService.ToolTip="Remove" AutomationProperties.Name="Remove from list"><FontIcon Glyph="&#xE711;" FontSize="12"/></Button>
                           </Grid>
                         </DataTemplate>
                       </ListView.ItemTemplate>
@@ -306,153 +305,156 @@
 
         <!-- RECEIVE: choose source -->
         <Grid x:Name="RxChoosePage" Visibility="Collapsed">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640" Spacing="24" Margin="0,8,0,28">
+            <StackPanel VerticalAlignment="Center" Spacing="22" Margin="0,8,0,28">
               <StackPanel Spacing="4" HorizontalAlignment="Center">
-                <TextBlock Text="How should the files reach you?" Style="{StaticResource MiTitle}" HorizontalAlignment="Center" TextAlignment="Center"/>
-                <TextBlock Text="Pick the way that fits the device you are sending from" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
+                <TextBlock Text="Receive from where?" Style="{StaticResource MiTitle}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                <TextBlock Text="Choose where the files are coming from" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
               </StackPanel>
-              <StackPanel Spacing="14" Margin="12,0">
-                <Button x:Name="RxLapCard" Style="{StaticResource CardButton}" Click="RxFromLaptop_Click" AutomationProperties.Name="Receive with a pairing code from another laptop running MoveIt">
-                  <Grid ColumnSpacing="18">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileBlue}"><FontIcon Glyph="&#xE7F8;" FontSize="28" Foreground="White"/></Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <TextBlock Text="Pairing code" Style="{StaticResource MiHeading}"/>
-                      <TextBlock Text="From another laptop that has MoveIt. Type a 6-digit code on it." Style="{StaticResource MiCaption}"/>
-                    </StackPanel>
-                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16" Opacity="0.55" VerticalAlignment="Center"/>
-                  </Grid>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="ChooseCol1" Width="*"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                <Button x:Name="RxLapCard" Style="{StaticResource CardButton}" Click="RxFromLaptop_Click" AutomationProperties.Name="Receive from a laptop">
+                  <StackPanel Spacing="8" HorizontalAlignment="Center">
+                    <Grid Width="68" Height="68" HorizontalAlignment="Center"><Ellipse><Ellipse.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF2F80ED" Offset="0"/><GradientStop Color="#FF56CCF2" Offset="1"/></LinearGradientBrush></Ellipse.Fill></Ellipse><FontIcon Glyph="&#xE7F8;" FontSize="30" Foreground="White"/></Grid>
+                    <TextBlock Text="From a laptop" Style="{StaticResource MiSubhead}" FontSize="17" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    <TextBlock Text="Pair with a 6-digit code" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                  </StackPanel>
                 </Button>
-                <Button x:Name="RxPhoneCard" Style="{StaticResource CardButton}" Click="RxFromPhone_Click" AutomationProperties.Name="Receive with a QR code or link from a phone, tablet or any browser">
-                  <Grid ColumnSpacing="18">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileAmber}"><FontIcon Glyph="&#xED14;" FontSize="28" Foreground="White"/></Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <TextBlock Text="QR code or link" Style="{StaticResource MiHeading}"/>
-                      <TextBlock Text="From a phone, tablet or any browser. No app needed." Style="{StaticResource MiCaption}"/>
-                    </StackPanel>
-                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16" Opacity="0.55" VerticalAlignment="Center"/>
-                  </Grid>
+                <Button x:Name="RxPhoneCard" Grid.Column="1" Margin="16,0,0,0" Style="{StaticResource CardButton}" Click="RxFromPhone_Click" AutomationProperties.Name="Receive from a phone or tablet">
+                  <StackPanel Spacing="8" HorizontalAlignment="Center">
+                    <Grid Width="68" Height="68" HorizontalAlignment="Center"><Ellipse><Ellipse.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFF59E0B" Offset="0"/><GradientStop Color="#FFFCD34D" Offset="1"/></LinearGradientBrush></Ellipse.Fill></Ellipse><FontIcon Glyph="&#xE8EA;" FontSize="30" Foreground="White"/></Grid>
+                    <TextBlock Text="From phone / tablet" Style="{StaticResource MiSubhead}" FontSize="17" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    <TextBlock Text="Scan a QR code" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                  </StackPanel>
                 </Button>
-              </StackPanel>
+              </Grid>
             </StackPanel>
           </ScrollViewer>
         </Grid>
 
-        <!-- RECEIVE: 1) waiting view (only code or QR)  2) full-screen live view (particles + all transfer data) -->
+        <!-- RECEIVE (2 columns when wide, stacked when narrow) -->
         <Grid x:Name="RxPage" Visibility="Collapsed">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
+          <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+            <Grid Margin="0,0,0,24">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="RxCol1" Width="340"/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
-          <!-- 1) WAITING -->
-          <ScrollViewer x:Name="RxWaitView" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420" Spacing="16" Margin="0,8,0,28">
-              <StackPanel Spacing="4">
-                <TextBlock x:Name="RxTitle" Text="Ready to receive" Style="{StaticResource MiTitle}" HorizontalAlignment="Center" TextAlignment="Center"/>
-                <TextBlock x:Name="RxName" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
-              </StackPanel>
-              <Border x:Name="CodeCard" Style="{StaticResource GlassCard}" CornerRadius="28" Padding="28,26">
-                <StackPanel Spacing="14" HorizontalAlignment="Center">
-                  <TextBlock Text="PAIRING CODE" Style="{StaticResource MiCaption}" CharacterSpacing="140" HorizontalAlignment="Center"/>
-                  <Border CornerRadius="20" Padding="28,10" Background="#14FFFFFF" BorderBrush="{StaticResource QrRing}" BorderThickness="1.5" HorizontalAlignment="Center">
-                    <TextBlock x:Name="CodeText" FontSize="46" FontWeight="Bold" FontFamily="Consolas" CharacterSpacing="320" HorizontalAlignment="Center" IsTextSelectionEnabled="True"/>
-                  </Border>
-                  <TextBlock Text="Enter this code on the sending laptop" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
-                </StackPanel>
-              </Border>
-              <Border x:Name="PhoneCard" Style="{StaticResource GlassCard}" CornerRadius="30" Padding="30,30,30,24" Visibility="Collapsed">
-                <StackPanel Spacing="20" HorizontalAlignment="Center">
-                  <!-- QR tile: white card inside a thin gradient ring -->
-                  <Border CornerRadius="30" Padding="4" HorizontalAlignment="Center">
-                    <Border.Background>
-                      <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                        <LinearGradientBrush.RelativeTransform><RotateTransform x:Name="QrSpin" CenterX="0.5" CenterY="0.5"/></LinearGradientBrush.RelativeTransform>
-                        <GradientStop Color="#FF38BDF8" Offset="0"/><GradientStop Color="#FF8B5CF6" Offset="0.33"/><GradientStop Color="#FFEC4899" Offset="0.66"/><GradientStop Color="#FF38BDF8" Offset="1"/>
-                      </LinearGradientBrush>
-                    </Border.Background>
-                    <Border Background="White" CornerRadius="27" Padding="18"><Image x:Name="QrImg" Width="220" Height="220"/></Border>
-                  </Border>
-                  <StackPanel Spacing="4">
-                    <TextBlock Text="Scan with a phone or tablet camera" Style="{StaticResource MiHeading}" FontSize="18" HorizontalAlignment="Center" TextAlignment="Center"/>
-                    <TextBlock Text="Both devices must be on the same WiFi. No app needed." Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
-                  </StackPanel>
-                  <!-- no camera (e.g. another PC)? open the link in any browser -->
-                  <Border CornerRadius="16" Padding="14,10" Background="#14FFFFFF" HorizontalAlignment="Center">
-                    <StackPanel Spacing="6">
-                      <TextBlock Text="OR OPEN THIS LINK IN ANY BROWSER" Style="{StaticResource MiCaption}" CharacterSpacing="100" HorizontalAlignment="Center"/>
-                      <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-                        <TextBlock x:Name="RxLink" FontFamily="Consolas" FontSize="13" IsTextSelectionEnabled="True" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="260"/>
-                        <Button Style="{StaticResource MiButton}" Padding="12,4" Click="CopyLink_Click"><StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE8C8;" FontSize="12"/><TextBlock x:Name="CopyLinkText" Text="Copy link" FontSize="12"/></StackPanel></Button>
+              <!-- left: info, animation, progress, result -->
+              <StackPanel x:Name="RxMain" Spacing="12">
+                <Border Style="{StaticResource GlassCard}" Padding="18">
+                  <StackPanel Spacing="14">
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock x:Name="RxTitle" Text="Ready to receive" Style="{StaticResource MiHeading}"/>
+                        <TextBlock x:Name="RxName" Style="{StaticResource MiCaption}"/>
                       </StackPanel>
-                    </StackPanel>
-                  </Border>
-                  <Border CornerRadius="16" Padding="12,6" Background="#14FFFFFF" HorizontalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" Spacing="8"><Ellipse Width="8" Height="8" Fill="{StaticResource WarnBrush}" VerticalAlignment="Center"/><TextBlock Text="Waiting for your phone" FontSize="12" Opacity="0.85"/></StackPanel>
-                  </Border>
-                </StackPanel>
-              </Border>
-              <TextBlock x:Name="RxStatus" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
-              <TextBlock x:Name="RxNote" Visibility="Collapsed" Style="{StaticResource MiCaption}" Opacity="1" Foreground="{StaticResource WarnBrush}" HorizontalAlignment="Center" TextAlignment="Center"/>
-            </StackPanel>
-          </ScrollViewer>
-
-          <!-- 2) LIVE: full-screen particle effect, all data is shown on top of it -->
-          <Border x:Name="RxLiveView" Visibility="Collapsed" RequestedTheme="Dark" CornerRadius="0" Margin="-24,-48,-24,0" Background="{StaticResource StageBrush}" BorderThickness="0" SizeChanged="RxLive_SizeChanged">
-            <Grid>
-              <local:ParticleFlow x:Name="Particle"/>
-              <Grid VerticalAlignment="Top" Margin="18,56,18,0" ColumnSpacing="10">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Border CornerRadius="14" Padding="12,6" Background="#26FFFFFF" HorizontalAlignment="Left"><TextBlock x:Name="RxDevice" Text="—" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/></Border>
-                <Border Grid.Column="1" CornerRadius="14" Padding="12,6" Background="#26FFFFFF"><TextBlock x:Name="RxStateText" Text="Waiting" FontSize="12" FontWeight="SemiBold"/></Border>
-              </Grid>
-              <Border x:Name="RxBottom" VerticalAlignment="Bottom" Margin="16" CornerRadius="18" Padding="18" Background="#D90A1330" BorderBrush="#26FFFFFF" BorderThickness="1" SizeChanged="RxBottom_SizeChanged"
-                      Opacity="0" IsHitTestVisible="False" PointerEntered="RxBottom_PointerEntered" PointerExited="RxBottom_PointerExited">
-                <StackPanel Spacing="12">
-                  <StackPanel x:Name="RxResultHead" Orientation="Horizontal" Spacing="12" Visibility="Collapsed">
-                    <Grid Width="44" Height="44"><Ellipse x:Name="RxResDot" Fill="{StaticResource OkBrush}"/><FontIcon x:Name="RxResIcon" Glyph="&#xE73E;" FontSize="20" Foreground="White"/></Grid>
-                    <StackPanel VerticalAlignment="Center"><TextBlock x:Name="RxResTitle" Style="{StaticResource MiHeading}"/><TextBlock x:Name="RxResMsg" Style="{StaticResource MiCaption}"/></StackPanel>
+                      <Border Grid.Column="1" CornerRadius="10" Padding="10,3" VerticalAlignment="Top" Background="{ThemeResource GlassBrush}"><TextBlock x:Name="RxStateText" Text="Waiting" FontSize="12" FontWeight="SemiBold"/></Border>
+                    </Grid>
+                    <Grid ColumnSpacing="16" RowSpacing="12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                      <StackPanel><TextBlock Text="Device" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxDevice" Text="—" TextTrimming="CharacterEllipsis"/></StackPanel>
+                      <StackPanel Grid.Column="1"><TextBlock Text="File" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxFile" Text="—" TextTrimming="CharacterEllipsis"/></StackPanel>
+                      <StackPanel Grid.Row="1"><TextBlock Text="Format" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxFormat" Text="—"/></StackPanel>
+                      <StackPanel Grid.Row="1" Grid.Column="1"><TextBlock Text="Total size" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxSize" Text="—"/></StackPanel>
+                      <StackPanel Grid.Row="2"><TextBlock Text="Files" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxFiles" Text="—"/></StackPanel>
+                      <StackPanel Grid.Row="2" Grid.Column="1"><TextBlock Text="Status" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxStatus" TextWrapping="Wrap"/></StackPanel>
+                    </Grid>
+                    <TextBlock x:Name="RxNote" Visibility="Collapsed" Style="{StaticResource MiCaption}" Opacity="1" Foreground="{StaticResource WarnBrush}"/>
                   </StackPanel>
-                  <StackPanel x:Name="RxProgCard" Spacing="8" Visibility="Collapsed">
+                </Border>
+
+                <!-- full-bleed animation zone -->
+                <Border x:Name="RxStage" Height="340" CornerRadius="20" Background="{StaticResource StageBrush}" BorderBrush="#33FFFFFF" BorderThickness="1">
+                  <Grid>
+                    <local:ParticleFlow x:Name="Particle"/>
+                    <TextBlock x:Name="RxStageText" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,16" Foreground="#CCE8F7FF" FontSize="13" TextAlignment="Center" TextWrapping="Wrap"/>
+                  </Grid>
+                </Border>
+
+                <!-- progress + cancel (only while receiving) -->
+                <Border x:Name="RxProgCard" Style="{StaticResource GlassCard}" Padding="18" Visibility="Collapsed">
+                  <StackPanel Spacing="10">
                     <Grid>
                       <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                      <TextBlock x:Name="RxPercent" Text="0%" FontSize="32" FontWeight="SemiBold"/>
+                      <TextBlock x:Name="RxPercent" Text="0%" FontSize="28" FontWeight="SemiBold"/>
                       <TextBlock x:Name="RxStat" Grid.Column="1" Style="{StaticResource MiCaption}" HorizontalAlignment="Right" VerticalAlignment="Center" TextAlignment="Right"/>
                     </Grid>
                     <ProgressBar x:Name="RxBar" Maximum="100" CornerRadius="4"/>
-                    <StackPanel Orientation="Horizontal" Spacing="16">
-                      <TextBlock x:Name="RxSpeed" Text="—" FontWeight="SemiBold"/>
-                      <TextBlock x:Name="RxEta" Text="Estimated time: —" Opacity="0.8"/>
+                    <Grid ColumnSpacing="12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                        <TextBlock x:Name="RxSpeed" Text="—" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="RxEta" Text="ETA —" Opacity="0.8"/>
+                      </StackPanel>
+                      <Button x:Name="RxCancelBtn" Grid.Column="1" Content="Cancel transfer" Style="{StaticResource MiButton}" Click="RxCancel_Click">
+                        <Button.Resources>
+                          <SolidColorBrush x:Key="ButtonBackground" Color="#FFDC2626"/><SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#FFB91C1C"/><SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#FF991B1B"/>
+                          <SolidColorBrush x:Key="ButtonForeground" Color="White"/><SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White"/><SolidColorBrush x:Key="ButtonForegroundPressed" Color="White"/>
+                          <SolidColorBrush x:Key="ButtonBorderBrush" Color="#FFDC2626"/><SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#FFB91C1C"/><SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#FF991B1B"/>
+                        </Button.Resources>
+                      </Button>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
+                <!-- result: Transfer Complete / Cancelled / Failed -->
+                <Border x:Name="RxResult" Style="{StaticResource GlassCard}" Padding="18" Visibility="Collapsed">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                      <Grid Width="44" Height="44"><Ellipse x:Name="RxResDot" Fill="{StaticResource OkBrush}"/><FontIcon x:Name="RxResIcon" Glyph="&#xE73E;" FontSize="20" Foreground="White"/></Grid>
+                      <StackPanel VerticalAlignment="Center"><TextBlock x:Name="RxResTitle" Style="{StaticResource MiHeading}"/><TextBlock x:Name="RxResMsg" Style="{StaticResource MiCaption}"/></StackPanel>
                     </StackPanel>
+                    <TextBlock x:Name="RxResDetails" Style="{StaticResource MiBody}" IsTextSelectionEnabled="True"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button x:Name="RxAgainBtn" Content="Receive more" Style="{StaticResource MiPrimaryButton}" Click="RxAgain_Click"/>
+                      <Button x:Name="RxOpenBtn" Content="Open folder" Style="{StaticResource MiButton}" Click="RxOpen_Click"/>
+                      <Button x:Name="RxDoneBtn" Content="Done" Style="{StaticResource MiButton}" Click="RxDone_Click"/>
+                    </StackPanel>
+                    <Button x:Name="InstallBtn" Visibility="Collapsed" Content="Install all apps from old laptop" Style="{StaticResource MiButton}" HorizontalAlignment="Stretch" Click="InstallApps_Click"/>
                   </StackPanel>
-                  <Grid ColumnSpacing="16" RowSpacing="10">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                    <StackPanel Grid.ColumnSpan="3"><TextBlock Text="File" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxFile" Text="—" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/></StackPanel>
-                    <StackPanel Grid.Row="1"><TextBlock Text="Format" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxFormat" Text="—"/></StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="1"><TextBlock Text="Total size" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxSize" Text="—"/></StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="2"><TextBlock Text="Files" Style="{StaticResource MiCaption}"/><TextBlock x:Name="RxFiles" Text="—"/></StackPanel>
+                </Border>
+              </StackPanel>
+
+              <!-- right: pairing code / QR / save folder -->
+              <StackPanel x:Name="RxSide" Grid.Column="1" Margin="16,0,0,0" Spacing="12">
+                <Border x:Name="CodeCard" Style="{StaticResource GlassCard}">
+                  <StackPanel Spacing="4" HorizontalAlignment="Center">
+                    <TextBlock Text="Pairing code" Style="{StaticResource MiCaption}" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="CodeText" FontSize="40" FontWeight="Bold" CharacterSpacing="300" HorizontalAlignment="Center" IsTextSelectionEnabled="True"/>
+                    <TextBlock Text="Enter this code on the sending laptop" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                  </StackPanel>
+                </Border>
+                <Border x:Name="PhoneCard" Style="{StaticResource GlassCard}" Visibility="Collapsed">
+                  <StackPanel Spacing="8" HorizontalAlignment="Center">
+                    <TextBlock Text="Send from phone or tablet" Style="{StaticResource MiSubhead}" HorizontalAlignment="Center"/>
+                    <Border Background="White" CornerRadius="12" Padding="8" HorizontalAlignment="Center"><Image x:Name="QrImg" Width="170" Height="170"/></Border>
+                    <TextBlock Text="Scan with your phone camera (same WiFi), then pick one or many files" Style="{StaticResource MiCaption}" TextAlignment="Center" MaxWidth="260"/>
+                    <TextBlock x:Name="PhoneUrl" FontSize="12" Opacity="0.8" IsTextSelectionEnabled="True" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource GlassCard}" Padding="18">
+                  <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="Saving to" Style="{StaticResource MiCaption}"/>
+                      <TextBlock x:Name="DestText" TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
+                    </StackPanel>
+                    <Button x:Name="RxChangeBtn" Grid.Column="1" Content="Change" Style="{StaticResource MiButton}" Click="ChangeDest_Click"/>
                   </Grid>
-                  <TextBlock x:Name="RxResDetails" Style="{StaticResource MiCaption}" Opacity="0.9" IsTextSelectionEnabled="True" Visibility="Collapsed"/>
-                  <Button x:Name="RxCancelBtn" Content="Cancel transfer" HorizontalAlignment="Stretch" Visibility="Collapsed" Style="{StaticResource MiButton}" Click="RxCancel_Click">
-                    <Button.Resources>
-                      <SolidColorBrush x:Key="ButtonBackground" Color="#FFDC2626"/><SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#FFB91C1C"/><SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#FF991B1B"/>
-                      <SolidColorBrush x:Key="ButtonForeground" Color="White"/><SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White"/><SolidColorBrush x:Key="ButtonForegroundPressed" Color="White"/>
-                      <SolidColorBrush x:Key="ButtonBorderBrush" Color="#FFDC2626"/><SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#FFB91C1C"/><SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#FF991B1B"/>
-                    </Button.Resources>
-                  </Button>
-                  <StackPanel x:Name="RxResult" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
-                    <Button x:Name="RxAgainBtn" Content="Receive more" Style="{StaticResource MiPrimaryButton}" Click="RxAgain_Click"/>
-                    <Button x:Name="RxOpenBtn" Content="Open folder" Style="{StaticResource MiButton}" Click="RxOpen_Click"/>
-                    <Button x:Name="RxDoneBtn" Content="Done" Style="{StaticResource MiButton}" Click="RxDone_Click"/>
-                  </StackPanel>
-                  <Button x:Name="InstallBtn" Visibility="Collapsed" Content="Install all apps from old laptop" Style="{StaticResource MiButton}" HorizontalAlignment="Stretch" Click="InstallApps_Click"/>
-                </StackPanel>
-              </Border>
+                </Border>
+              </StackPanel>
             </Grid>
-          </Border>
+          </ScrollViewer>
         </Grid>
 
         <!-- HISTORY -->
         <Grid x:Name="HistoryPage" Visibility="Collapsed">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="14" Margin="0,0,0,24">
               <Grid>
@@ -488,6 +490,7 @@
 
         <!-- SETTINGS -->
         <Grid x:Name="SettingsPage" Visibility="Collapsed">
+          <Grid.OpacityTransition><ScalarTransition/></Grid.OpacityTransition>
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="14" Margin="0,0,0,24">
               <TextBlock Text="Settings" Style="{StaticResource MiTitle}"/>

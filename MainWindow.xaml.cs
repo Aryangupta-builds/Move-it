@@ -24,37 +24,26 @@ public sealed partial class MainWindow : Window
     string targetIp = "", targetCode = "", targetName = "";
     WebShare? web; Receiver? rx; CancellationTokenSource? scanCts, txCts;
     int scanRounds;
-    readonly DispatcherQueueTimer rxTimer, rxPanelTimer;
-    bool rxHover, rxPanelOk;   // rxHover: pointer over icon/panel; rxPanelOk: details exist (a transfer started or ended), so hover may show them
+    readonly DispatcherQueueTimer rxTimer;
 
     public MainWindow()
     {
         InitializeComponent();
         Title = "MoveIt";
-        foreach (UIElement el in new UIElement[] { SetupPage, HomePage, ScanPage, SendPage, RxChoosePage, RxPage, HistoryPage, SettingsPage }) Fx.Fade(el);
-        Fx.Fade(RxBottom, 0.35);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 800));
-        (AppWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Maximize();   // always open maximized
         try { AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico")); } catch { }
+        Drift(B1, 60, 40, 11); Drift(B2, -50, 60, 14); Drift(B3, 70, -50, 17);
         DeviceGrid.ItemsSource = devices;
         ItemList.ItemsSource = items;
         items.CollectionChanged += (_, _) => RefreshItemsUi();
         VersionText.Text = "v" + AppInfo.Version; AboutVersion.Text = "Version " + AppInfo.Version;
         rxTimer = DispatcherQueue.CreateTimer(); rxTimer.Interval = TimeSpan.FromMilliseconds(120); rxTimer.Tick += (_, _) => RxTick();
-        rxPanelTimer = DispatcherQueue.CreateTimer(); rxPanelTimer.Interval = TimeSpan.FromSeconds(4);
-        rxPanelTimer.Tick += (_, _) => { rxPanelTimer.Stop(); if (!rxHover && rxReceiving) ShowRxPanel(false); };
-        Particle.IconHover += inside => { rxHover = inside; if (inside) { rxPanelTimer.Stop(); if (rxPanelOk) ShowRxPanel(true); } else if (rxReceiving) { rxPanelTimer.Interval = TimeSpan.FromSeconds(1.5); rxPanelTimer.Start(); } };
-        Particle.IconTapped += () => { if (!rxPanelOk || !rxReceiving) return; if (RxBottom.Opacity > 0.5) ShowRxPanel(false); else PulseRxPanel(); };   // touch: tap toggles
-        Closed += (_, _) => StopAll(true);
+        Closed += (_, _) => StopAll();
         LoadSettings();
-        RootGrid.ActualThemeChanged += (_, _) => UpdateCaptionButtons();
-        RootGrid.Loaded += (_, _) => UpdateCaptionButtons();
-        RecoverIncoming();
         ExtendsContentIntoTitleBar = true; SetTitleBar(HeaderBar);
         AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
         AppWindow.TitleBar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
         AppWindow.TitleBar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
-        UpdateCaptionButtons();
         ModeRadio.SelectedIndex = 1;
         if (!cfg.SetupDone) { SetupName.Text = cfg.DeviceName; SetupName.PlaceholderText = Environment.MachineName; }
         BuildSetup();
@@ -89,18 +78,6 @@ public sealed partial class MainWindow : Window
         BackBtn.Visibility = page == HomePage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
         SettingsBtn.Visibility = page == SettingsPage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
         HistoryBtn.Visibility = page == HistoryPage || page == SetupPage ? Visibility.Collapsed : Visibility.Visible;
-        UpdateHeaderStage();
-    }
-
-    // while the full-screen particle stage is open it also runs under the header (no seam): header + caption buttons turn light
-    bool stageLive;
-    void UpdateHeaderStage()
-    {
-        bool live = RxPage.Visibility == Visibility.Visible && RxLiveView.Visibility == Visibility.Visible;
-        if (live == stageLive) return;
-        stageLive = live;
-        HeaderBar.RequestedTheme = live ? ElementTheme.Dark : ElementTheme.Default;
-        UpdateCaptionButtons();
     }
 
     bool dialogOpen;
@@ -149,45 +126,19 @@ public sealed partial class MainWindow : Window
         if (current == RxPage && cfg.MobileShare) { StopAll(); ShowPage(RxChoosePage); return; }
         StopAll(); ShowPage(HomePage);
     }
-    async void Back_Accel(KeyboardAccelerator a, KeyboardAcceleratorInvokedEventArgs e)
-    {
-        // Esc / Alt+Left must not also fire when a dialog or dropdown is open (Esc is meant to close that first)
-        if (current == HomePage || VisualTreeHelper.GetOpenPopupsForXamlRoot(Content.XamlRoot).Count > 0) return;
-        e.Handled = true; await GoBackAsync();
-    }
-    // Narrow (< 760 px): smaller side padding and a single column of mode choices. Cards are single-column everywhere.
-    bool? narrowLayout;
-    void Root_SizeChanged(object s, SizeChangedEventArgs e) => ApplyLayout(e.NewSize.Width);
-
-    void ApplyLayout(double width)
-    {
-        bool n = width < 760;
-        if (narrowLayout == n) return;
-        narrowLayout = n;
-        PagesHost.Padding = n ? new Thickness(14, 0, 14, 0) : new Thickness(24, 0, 24, 0);
-        ModeRadio.MaxColumns = n ? 1 : 3;
-    }
-
+    async void Back_Accel(KeyboardAccelerator a, KeyboardAcceleratorInvokedEventArgs e) { if (current != HomePage) { e.Handled = true; await GoBackAsync(); } }
     async void Root_PointerPressed(object s, PointerRoutedEventArgs e)
     {
         if (e.GetCurrentPoint(RootGrid).Properties.IsXButton1Pressed && current != HomePage) await GoBackAsync();
     }
     async void Back_Click(object s, RoutedEventArgs e) => await GoBackAsync();
 
-    void StopAll(bool sync = false)
+    void StopAll()
     {
-        rxGen++; rxTimer.Stop(); rxPanelTimer.Stop(); StopQrSpin(); rxReceiving = false; rxConnected = false;
+        rxGen++; rxTimer.Stop(); rxReceiving = false; rxConnected = false;
         scanCts?.Cancel(); txCts?.Cancel();
         ScanRadar.Stop(); Particle.Stop(); SendFx.Stop();
         rx?.Stop(); rx = null; web?.Stop(); web = null;
-        // files that finished but were never moved out of the staging folder go to the default save folder
-        var st = stage; stage = "";
-        if (st != "")
-        {
-            var target = dest;
-            void Work() { try { MoveStaged(st, target); Directory.Delete(st, true); } catch { } }
-            if (sync) Work(); else _ = Task.Run(Work);
-        }
     }
 
     T Init<T>(T picker) { InitializeWithWindow.Initialize(picker!, WindowNative.GetWindowHandle(this)); return picker; }
@@ -231,27 +182,13 @@ public sealed partial class MainWindow : Window
     void ApplyTheme(string t)
     {
         RootGrid.RequestedTheme = t == "Light" ? ElementTheme.Light : t == "Dark" ? ElementTheme.Dark : ElementTheme.Default;
-        UpdateCaptionButtons();
-    }
-
-    // The system minimize / maximize / close buttons follow the SYSTEM theme, not the app theme. If the app is dark
-    // but Windows is light (or the other way round) they become invisible, so we colour them ourselves.
-    void UpdateCaptionButtons()
-    {
+        // keep the window caption buttons (minimize / maximize / close) readable when the app theme differs from the Windows theme
         try
         {
-            bool appDark = RootGrid.ActualTheme == ElementTheme.Dark;
-            Aurora.SetDark(appDark);
-            bool dark = appDark || stageLive;   // the particle stage is always dark
-            Windows.UI.Color Argb(byte a, byte r, byte g, byte b) => Windows.UI.Color.FromArgb(a, r, g, b);
-            var fg = dark ? Argb(255, 255, 255, 255) : Argb(255, 20, 20, 20);
+            if (!Microsoft.UI.Windowing.AppWindowTitleBar.IsCustomizationSupported()) return;
             var tb = AppWindow.TitleBar;
-            tb.ButtonForegroundColor = fg; tb.ButtonHoverForegroundColor = fg; tb.ButtonPressedForegroundColor = fg;
-            tb.ButtonInactiveForegroundColor = dark ? Argb(255, 150, 155, 170) : Argb(255, 110, 115, 130);
-            tb.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
-            tb.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
-            tb.ButtonHoverBackgroundColor = dark ? Argb(40, 255, 255, 255) : Argb(30, 0, 0, 0);
-            tb.ButtonPressedBackgroundColor = dark ? Argb(70, 255, 255, 255) : Argb(55, 0, 0, 0);
+            Windows.UI.Color? fg = t == "Light" ? Microsoft.UI.Colors.Black : t == "Dark" ? Microsoft.UI.Colors.White : null;
+            tb.ButtonForegroundColor = fg; tb.ButtonInactiveForegroundColor = fg;
         }
         catch { }
     }
@@ -403,13 +340,13 @@ public sealed partial class MainWindow : Window
         if (!folder) { try { size = new FileInfo(path).Length; } catch { } }
         return new SendItem
         {
-            FullPath = path, Folder = folder, Size = size,
+            Path = path, Folder = folder, Size = size,
             Name = Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : path,
             Detail = folder ? "Folder  •  " + path : Fmt(size) + "  •  " + (Path.GetDirectoryName(path) ?? "")
         };
     }
 
-    void AddItem(string path, bool folder) { if (!items.Any(i => i.FullPath == path)) items.Add(MakeItem(path, folder)); }
+    void AddItem(string path, bool folder) { if (!items.Any(i => i.Path == path)) items.Add(MakeItem(path, folder)); }
 
     async void AddFiles_Click(object s, RoutedEventArgs e)
     {
@@ -433,7 +370,7 @@ public sealed partial class MainWindow : Window
 
     void RemoveItem_Click(object s, RoutedEventArgs e)
     {
-        if (s is Button b && b.Tag is string path) { var it = items.FirstOrDefault(i => i.FullPath == path); if (it != null) items.Remove(it); }
+        if (s is Button b && b.Tag is string path) { var it = items.FirstOrDefault(i => i.Path == path); if (it != null) items.Remove(it); }
     }
 
     void Clear_Click(object s, RoutedEventArgs e) => items.Clear();
@@ -468,7 +405,7 @@ public sealed partial class MainWindow : Window
         double speed = txRate.Update(p.Done, Environment.TickCount64);
         TxBar.Value = pct; TxPercent.Text = $"{pct:0}%";
         if (!string.IsNullOrEmpty(p.File)) TxFile.Text = p.Count > 1 ? $"{p.File}  ({p.Index} of {p.Count})" : p.File;
-        TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {(speed > 0 ? Fmt(speed) + "/s" : "—")}  •  Estimated time: {AppInfo.Eta(p.Total - p.Done, speed)}";
+        TxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}  •  {(speed > 0 ? Fmt(speed) + "/s" : "—")}  •  ETA {AppInfo.Eta(p.Total - p.Done, speed)}";
     }
 
     async void Cancel_Click(object s, RoutedEventArgs e)
@@ -515,7 +452,7 @@ public sealed partial class MainWindow : Window
         TxBar.Value = 0; TxPercent.Text = "0%"; TxFile.Text = ""; txRate.Reset(); txTotal = 0; txFiles = 0;
         SendFx.DeviceLabel = DeviceName; SendFx.Transfer(true);
         txCts = new(); var token = txCts.Token;
-        var snapshot = full ? new List<(string path, bool folder)>() : items.Select(i => (i.FullPath, i.Folder)).ToList();
+        var snapshot = full ? new List<(string path, bool folder)>() : items.Select(i => (i.Path, i.Folder)).ToList();
         var prog = new Progress<Prog>(ShowTx);   // created on the UI thread, so reports arrive on the UI thread (the sender reports every ~200 ms)
         string status = "Failed"; string device = targetName;
         try
@@ -570,128 +507,41 @@ public sealed partial class MainWindow : Window
     int rxGen; bool phoneMode, rxConnected, rxReceiving, rxFatal;
     string peerName = "", peerType = ""; int rxCount; long rxTotal; Prog? rxLatest; long rxStartMs, terminalAt;
     readonly RateMeter rxRate = new();
-    string stage = "";    // staging folder of the current receive session (files land here first, then move to the folder the user picks)
-    string savedTo = "";  // folder where the finished files really ended up
 
-    static string IncomingRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MoveIt", "Incoming");
-
-    static string NewStage()
-    {
-        var d = Path.Combine(IncomingRoot, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(d);
-        return d;
-    }
-
-    // Moves finished files from the staging folder into target (keeps sub folders, renames duplicates). Unfinished .part files stay. Returns how many files moved.
-    static int MoveStaged(string from, string target)
-    {
-        int n = 0;
-        if (!Directory.Exists(from)) return 0;
-        foreach (var f in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories).ToList())
-        {
-            if (f.EndsWith(".part", StringComparison.OrdinalIgnoreCase)) continue;
-            try
-            {
-                var to = Net.UniquePath(Path.Combine(target, Path.GetRelativePath(from, f)));
-                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-                File.Move(f, to); n++;
-            }
-            catch { }
-        }
-        foreach (var d in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories).OrderByDescending(x => x.Length).ToList())
-            try { if (!Directory.EnumerateFileSystemEntries(d).Any()) Directory.Delete(d); } catch { }
-        return n;
-    }
-
-    // If the app was closed or crashed while files were still in staging, put them in <save folder>\Recovered at the next start.
-    void RecoverIncoming()
-    {
-        try
-        {
-            var root = IncomingRoot;
-            var old = Directory.Exists(root) ? Directory.GetDirectories(root) : Array.Empty<string>();
-            if (old.Length == 0) return;
-            var target = Path.Combine(dest, "Recovered");
-            _ = Task.Run(() =>
-            {
-                foreach (var d in old) { try { MoveStaged(d, target); Directory.Delete(d, true); } catch { } }
-            });
-        }
-        catch { }
-    }
-
-    void SetRxState(string text) => RxStateText.Text = text;
-
-    // waiting view (only code / QR) <-> full-screen live view (particles + transfer data)
-    void ShowRxLive(bool live)
-    {
-        RxWaitView.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
-        RxLiveView.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
-        if (live) StopQrSpin(); else if (PhoneCard.Visibility == Visibility.Visible) StartQrSpin();
-        if (live) { RxLiveView.UpdateLayout(); UpdateStageCenter(); }
-        UpdateHeaderStage();
-    }
-
-    void ShowRxResult(bool on)
-    {
-        var v = on ? Visibility.Visible : Visibility.Collapsed;
-        RxResultHead.Visibility = v; RxResult.Visibility = v; RxResDetails.Visibility = v;
-    }
-
-    // details panel (file, format, size, speed...) sits at the bottom. While receiving it shows for a few seconds and hides by itself;
-    // hover / tap on the device icon (or on the panel) shows it again. After the transfer ends it stays (result + buttons).
-    void ShowRxPanel(bool show) { RxBottom.Opacity = show ? 1 : 0; RxBottom.IsHitTestVisible = show; }
-    void PulseRxPanel() { ShowRxPanel(true); rxPanelTimer.Stop(); rxPanelTimer.Interval = TimeSpan.FromSeconds(4); rxPanelTimer.Start(); }
-    void RxBottom_PointerEntered(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) { rxHover = true; rxPanelTimer.Stop(); }
-    void RxBottom_PointerExited(object s, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) { rxHover = false; if (rxReceiving) { rxPanelTimer.Interval = TimeSpan.FromSeconds(1.5); rxPanelTimer.Start(); } }
-
-    // the device icon keeps ONE fixed place: in the free space above the (maximum height) details panel, so it never jumps when the panel changes
-    void RxLive_SizeChanged(object s, SizeChangedEventArgs e) => UpdateStageCenter();
-    void RxBottom_SizeChanged(object s, SizeChangedEventArgs e) { }
-    void UpdateStageCenter()
-    {
-        double h = RxLiveView.ActualHeight; if (h <= 0) return;
-        double top = 104, bottom = h - 300;                   // 104 = header (48) + status chips; ~300 px reserved for the details panel
-        double center = bottom > top + 160 ? (top + bottom) / 2 : Math.Max(120, h * 0.3);
-        Particle.CenterFraction = Math.Clamp(center / h, 0.15, 0.5);
-    }
+    void SetRxState(string text) { RxStateText.Text = text; RxStageText.Text = text; }
 
     void StartReceiving(bool phone)
     {
         StopAll(); int gen = ++rxGen;
-        phoneMode = phone; rxFatal = false; savedTo = "";
-        try { stage = NewStage(); } catch { stage = ""; }
-        string recvDir = stage != "" ? stage : dest;   // fallback: save straight into the default folder
+        phoneMode = phone; rxFatal = false;
         var code = RandomNumberGenerator.GetInt32(1000000).ToString("D6");
-        CodeText.Text = code;
+        CodeText.Text = code; DestText.Text = dest;
         CodeCard.Visibility = phone ? Visibility.Collapsed : Visibility.Visible;
         PhoneCard.Visibility = Visibility.Collapsed;
-        RxTitle.Text = phone ? "Scan to send files" : "Ready to receive";
+        RxTitle.Text = phone ? "Receive from phone or tablet" : "Ready to receive";
         RxName.Text = $"Visible as {DeviceName}  •  {Net.LocalIp()}";
-        RxName.Visibility = phone ? Visibility.Collapsed : Visibility.Visible;
-        ResetRxView(phone ? "" : "Waiting for the other laptop…");
+        ResetRxView(phone ? "Scan the QR code with your phone camera" : "Waiting for the other laptop…");
         ShowPage(RxPage);
         Action<RxEvent> raise = ev => DispatcherQueue.TryEnqueue(() => { if (gen == rxGen) OnRxEvent(ev); });
         Action<Prog> prog = p => OnRxProg(p, gen);
         if (phone)
         {
-            web = new WebShare(code, recvDir, DeviceName, raise, prog);
+            web = new WebShare(code, dest, DeviceName, raise, prog);
             try { web.Start(); ShowQr($"http://{Net.LocalIp()}:{WebShare.Port}/?c={code}"); }
-            catch (Exception ex) { web = null; RxStatus.Text = "Could not start phone sharing: " + ex.Message; }
+            catch (Exception ex) { web = null; RxStatus.Text = "Could not start phone sharing: " + ex.Message; SetRxState("Error"); }
             return;
         }
-        rx = new Receiver(code, recvDir, raise, prog, DeviceName);
+        rx = new Receiver(code, dest, raise, prog, DeviceName);
         rx.Start();
     }
 
     void ResetRxView(string status)
     {
         rxReceiving = false; rxConnected = false; rxTimer.Stop();
-        Particle.Stop(); ShowRxLive(false); rxPanelTimer.Stop(); rxPanelOk = false; ShowRxPanel(false);
-        ShowRxResult(false); RxProgCard.Visibility = Visibility.Collapsed; RxCancelBtn.Visibility = Visibility.Collapsed;
-        InstallBtn.Visibility = Visibility.Collapsed; RxNote.Visibility = Visibility.Collapsed;
+        Particle.Start();
+        RxResult.Visibility = Visibility.Collapsed; RxProgCard.Visibility = Visibility.Collapsed; RxNote.Visibility = Visibility.Collapsed;
         RxDevice.Text = RxFile.Text = RxFormat.Text = RxSize.Text = RxFiles.Text = "—";
-        RxBar.Value = 0; RxPercent.Text = "0%"; RxCancelBtn.IsEnabled = true;
+        RxBar.Value = 0; RxPercent.Text = "0%"; RxChangeBtn.IsEnabled = true; RxCancelBtn.IsEnabled = true;
         RxStatus.Text = status; SetRxState("Waiting");
     }
 
@@ -711,10 +561,10 @@ public sealed partial class MainWindow : Window
         if (!rxReceiving) EnterReceiving();
         double pct = p.Total == 0 ? 100 : 100.0 * p.Done / p.Total;
         double speed = rxRate.Update(p.Done, Environment.TickCount64);
-        RxBar.Value = pct; RxPercent.Text = $"{pct:0}%"; Particle.SetProgress(pct);
+        RxBar.Value = pct; RxPercent.Text = $"{pct:0}%";
         RxStat.Text = $"{Fmt(p.Done)} of {Fmt(p.Total)}";
         RxSpeed.Text = speed > 0 ? Fmt(speed) + "/s" : "—";
-        RxEta.Text = "Estimated time: " + AppInfo.Eta(p.Total - p.Done, speed);
+        RxEta.Text = "ETA " + AppInfo.Eta(p.Total - p.Done, speed);
         RxSize.Text = Fmt(p.Total);
         if (!string.IsNullOrEmpty(p.File)) { RxFile.Text = p.File; RxFormat.Text = AppInfo.FormatOf(p.File); }
         if (p.Count > 0) RxFiles.Text = $"{p.Index} of {p.Count}";
@@ -722,10 +572,10 @@ public sealed partial class MainWindow : Window
 
     void EnterReceiving()
     {
-        if (!rxConnected) { rxConnected = true; ShowRxLive(true); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect(); }   // e.g. 2nd phone batch without a new Connected event
-        rxReceiving = true; rxPanelOk = true; Particle.BeginTransfer(); Particle.SetProgress(0); PulseRxPanel(); rxRate.Reset(); rxStartMs = Environment.TickCount64;
-        ShowRxResult(false); InstallBtn.Visibility = Visibility.Collapsed;
-        RxProgCard.Visibility = Visibility.Visible; RxCancelBtn.Visibility = Visibility.Visible; RxCancelBtn.IsEnabled = true;
+        if (!rxConnected) { rxConnected = true; Particle.Start(); Particle.Connect(); }   // e.g. 2nd phone batch without a new Connected event
+        rxReceiving = true; rxRate.Reset(); rxStartMs = Environment.TickCount64;
+        RxResult.Visibility = Visibility.Collapsed; RxProgCard.Visibility = Visibility.Visible;
+        RxCancelBtn.IsEnabled = true; RxChangeBtn.IsEnabled = false;
         RxStatus.Text = $"Receiving from {(peerName == "" ? "device" : peerName)}…"; SetRxState("Receiving");
     }
 
@@ -738,12 +588,11 @@ public sealed partial class MainWindow : Window
                 break;
             case RxState.Connected:
                 peerName = ev.Device; peerType = ev.DeviceType; rxCount = ev.Count; rxTotal = ev.Total;
-                RxNote.Visibility = Visibility.Collapsed; ShowRxResult(false); InstallBtn.Visibility = Visibility.Collapsed;
+                RxNote.Visibility = Visibility.Collapsed; RxResult.Visibility = Visibility.Collapsed;
                 RxDevice.Text = $"{peerName} • {peerType}";
                 if (rxTotal > 0) RxSize.Text = Fmt(rxTotal);
                 if (rxCount > 0) RxFiles.Text = $"0 of {rxCount}";
-                rxConnected = true;
-                ShowRxLive(true); rxPanelOk = false; ShowRxPanel(false); Particle.Start(); Particle.SetDevice(peerType); Particle.Connect();   // only the centred device icon (no particles yet); particles + details start with the transfer
+                rxConnected = true; Particle.Connect();
                 RxStatus.Text = ev.Message; SetRxState("Connected");
                 break;
             case RxState.Receiving:
@@ -760,18 +609,13 @@ public sealed partial class MainWindow : Window
         if (ev.Device != "") peerName = ev.Device;
         rxReceiving = false; rxConnected = false; rxTimer.Stop(); terminalAt = Environment.TickCount64;
         Interlocked.Exchange(ref rxLatest, null);
-        RxProgCard.Visibility = Visibility.Collapsed; RxCancelBtn.Visibility = Visibility.Collapsed;
+        RxProgCard.Visibility = Visibility.Collapsed; RxChangeBtn.IsEnabled = true;
         rxFatal = ev.State == RxState.Failed && ev.Message.StartsWith("Cannot listen");
 
         if (ev.State == RxState.Disconnected && !was)   // phone page closed before sending anything: just go back to waiting
-        { ResetRxView(phoneMode ? "" : ev.Message + ". Waiting…"); return; }
-
-        bool wasLive = RxLiveView.Visibility == Visibility.Visible;
-        ShowRxLive(true); rxPanelTimer.Stop(); rxPanelOk = true; ShowRxPanel(true); if (!wasLive) { Particle.Start(); Particle.SetDevice(peerType); }
-        int gen = rxGen; string st = stage;
+        { ResetRxView(ev.Message + ". Waiting…"); return; }
 
         string title, msg, details, glyph; Brush dot; string hist;
-        RxOpenBtn.Visibility = Visibility.Collapsed; InstallBtn.Visibility = Visibility.Collapsed;
         if (ev.State == RxState.Complete)
         {
             Particle.Complete(); hist = "Completed"; glyph = "\uE73E"; dot = Res("OkBrush");
@@ -781,90 +625,37 @@ public sealed partial class MainWindow : Window
             var exts = files.Select(f => AppInfo.FormatOf(f.Name)).Distinct().ToList();
             string fmt = files.Count == 1 ? AppInfo.FormatOf(files[0].Name) : exts.Count == 0 ? "—" : string.Join(", ", exts.Take(3)) + (exts.Count > 3 ? "…" : "");
             title = "Transfer Complete"; msg = ev.Message;
-            details = "Choose where to save the files…";
+            details = $"File: {name}\nFormat: {fmt}\nTotal size: {Fmt(size)}\nFrom: {peerName}\nSaved to: {dest}";
             RxSize.Text = Fmt(size); RxFile.Text = name; RxFormat.Text = fmt;
             HistoryStore.Add(new HistoryEntry(DateTime.Now, "Received", peerName == "" ? "Device" : peerName, files.Count, size, hist));
             SetRxState("Complete"); RxStatus.Text = "Complete";
+            RxOpenBtn.Visibility = Visibility.Visible;
+            InstallBtn.Visibility = File.Exists(Path.Combine(dest, "AppList", "apps.json")) ? Visibility.Visible : Visibility.Collapsed;
             RxAgainBtn.Content = "Receive more";
-            _ = SaveReceivedAsync(files.Count, st, gen);   // asks where to save, then moves the files there
+            if (cfg.OpenWhenDone) OpenDest();
         }
         else
         {
-            Particle.Error();   // cancelled / failed / disconnected: red stage + red X
-            if (ev.State == RxState.Cancelled) { hist = "Cancelled"; title = "Transfer cancelled"; glyph = "\uE711"; dot = Res("ErrBrush"); details = "Files that finished before the cancel are kept. The file in progress was deleted."; SetRxState("Cancelled"); }
+            Particle.Dim(); InstallBtn.Visibility = Visibility.Collapsed; RxOpenBtn.Visibility = Visibility.Visible;
+            if (ev.State == RxState.Cancelled) { hist = "Cancelled"; title = "Transfer cancelled"; glyph = "\uE711"; dot = Res("WarnBrush"); details = "Files that finished before the cancel are kept. The file in progress was deleted."; SetRxState("Cancelled"); }
             else if (ev.State == RxState.Disconnected) { hist = "Disconnected"; title = "Device disconnected"; glyph = "\uE7BA"; dot = Res("ErrBrush"); details = "The connection dropped (WiFi off or out of range). Files that finished are kept."; SetRxState("Disconnected"); }
             else { hist = "Failed"; title = "Transfer failed"; glyph = "\uE7BA"; dot = Res("ErrBrush"); details = "Check that both devices are on the same WiFi, then try again."; SetRxState("Failed"); }
             msg = ev.Message; RxStatus.Text = title;
             RxAgainBtn.Content = "Try again";
             if (was || ev.State != RxState.Failed || !rxFatal)
                 HistoryStore.Add(new HistoryEntry(DateTime.Now, "Received", peerName == "" ? "Device" : peerName, 0, rxTotal, hist));
-            _ = FlushAfterStopAsync(st, gen);   // finished files go to the default save folder
         }
         RxResIcon.Glyph = glyph; RxResDot.Fill = dot; RxResTitle.Text = title; RxResMsg.Text = msg; RxResDetails.Text = details;
-        ShowRxResult(true);
+        RxResult.Visibility = Visibility.Visible;
     }
 
-    // After a COMPLETE transfer: ask where to save, then move the files from the staging folder.
-    async Task SaveReceivedAsync(int count, string stageDir, int gen)
-    {
-        string target = dest;
-        try
-        {
-            if (stageDir != "" && count > 0 && !dialogOpen)
-            {
-                dialogOpen = true;
-                try
-                {
-                    var dlg = new ContentDialog
-                    {
-                        Title = "Where should we save the files?",
-                        Content = new TextBlock { Text = $"{count} file{(count == 1 ? "" : "s")} received.\nDefault folder:\n{dest}", TextWrapping = TextWrapping.Wrap },
-                        PrimaryButtonText = "Save to default folder", SecondaryButtonText = "Choose another folder…",
-                        DefaultButton = ContentDialogButton.Primary, XamlRoot = Content.XamlRoot, RequestedTheme = RootGrid.RequestedTheme
-                    };
-                    if (await dlg.ShowAsync() == ContentDialogResult.Secondary)
-                    {
-                        var picker = Init(new FolderPicker()); picker.FileTypeFilter.Add("*");
-                        var f = await picker.PickSingleFolderAsync();
-                        if (f != null) target = f.Path;
-                    }
-                }
-                finally { dialogOpen = false; }
-            }
-            if (stageDir != "") await Task.Run(() => MoveStaged(stageDir, target));
-            savedTo = target;
-            if (gen != rxGen) return;
-            RxResDetails.Text = $"Saved to: {target}";
-            RxOpenBtn.Visibility = Visibility.Visible;
-            InstallBtn.Visibility = File.Exists(Path.Combine(target, "AppList", "apps.json")) ? Visibility.Visible : Visibility.Collapsed;
-            if (cfg.OpenWhenDone) OpenDest();
-        }
-        catch (Exception ex)
-        {
-            if (gen == rxGen) RxResDetails.Text = "Could not save the files: " + ex.Message + (stageDir != "" ? "\nThey are still in: " + stageDir : "");
-        }
-    }
-
-    // After cancelled / failed / disconnected: finished files are kept in the default save folder.
-    async Task FlushAfterStopAsync(string stageDir, int gen)
-    {
-        if (stageDir == "") return;
-        var target = dest; int n = 0;
-        try { n = await Task.Run(() => MoveStaged(stageDir, target)); } catch { }
-        if (n > 0)
-        {
-            savedTo = target;
-            if (gen == rxGen) { RxResDetails.Text += $"\nFinished files saved to: {target}"; RxOpenBtn.Visibility = Visibility.Visible; }
-        }
-    }
-
-    void OpenDest() { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{(savedTo != "" ? savedTo : dest)}\"") { UseShellExecute = true }); } catch { } }
+    void OpenDest() { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{dest}\"") { UseShellExecute = true }); } catch { } }
 
     void RxOpen_Click(object s, RoutedEventArgs e) => OpenDest();
-    void RxAgain_Click(object s, RoutedEventArgs e) { savedTo = ""; if (rxFatal) StartReceiving(phoneMode); else ResetRxView(phoneMode ? "" : "Waiting for the other laptop…"); }
+    void RxAgain_Click(object s, RoutedEventArgs e) { if (rxFatal) StartReceiving(phoneMode); else ResetRxView(phoneMode ? "Scan the QR code with your phone camera" : "Waiting for the other laptop…"); }
     async void RxDone_Click(object s, RoutedEventArgs e) { rxReceiving = false; await GoBackAsync(); }
 
-    void CancelRx() { RxCancelBtn.IsEnabled = false; RxStatus.Text = "Cancelling…"; SetRxState("Cancelling…"); if (phoneMode) web?.CancelTransfer(); else rx?.CancelTransfer(); }
+    void CancelRx() { RxCancelBtn.IsEnabled = false; RxStatus.Text = "Cancelling…"; if (phoneMode) web?.CancelTransfer(); else rx?.CancelTransfer(); }
 
     async void RxCancel_Click(object s, RoutedEventArgs e)
     {
@@ -879,28 +670,15 @@ public sealed partial class MainWindow : Window
         var ms = new InMemoryRandomAccessStream();
         await ms.WriteAsync(png.AsBuffer()); ms.Seek(0);
         var bi = new BitmapImage(); await bi.SetSourceAsync(ms);
-        QrImg.Source = bi; PhoneCard.Visibility = Visibility.Visible; StartQrSpin();
-        shareUrl = url; RxLink.Text = url.Replace("http://", "");
+        QrImg.Source = bi; PhoneUrl.Text = url.Split('?')[0]; PhoneCard.Visibility = Visibility.Visible;
     }
 
-    // slowly rotating gradient ring around the QR code
-    Storyboard? qrSb;
-    void StartQrSpin()
+    async void ChangeDest_Click(object s, RoutedEventArgs e)
     {
-        if (qrSb != null) return;
-        var a = new DoubleAnimation { From = 0, To = 360, Duration = TimeSpan.FromSeconds(7), RepeatBehavior = RepeatBehavior.Forever, EnableDependentAnimation = true };
-        Storyboard.SetTarget(a, QrSpin); Storyboard.SetTargetProperty(a, "Angle");
-        qrSb = new Storyboard(); qrSb.Children.Add(a); qrSb.Begin();
-    }
-    void StopQrSpin() { qrSb?.Stop(); qrSb = null; }
-
-    string shareUrl = "";
-    async void CopyLink_Click(object s, RoutedEventArgs e)
-    {
-        if (shareUrl == "") return;
-        var dp = new Windows.ApplicationModel.DataTransfer.DataPackage(); dp.SetText(shareUrl);
-        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
-        CopyLinkText.Text = "Copied ✓"; await Task.Delay(1800); CopyLinkText.Text = "Copy link";
+        if (rxReceiving) return;
+        var p = Init(new FolderPicker()); p.FileTypeFilter.Add("*");
+        var f = await p.PickSingleFolderAsync();
+        if (f != null) { dest = f.Path; cfg.SaveFolder = dest; SaveSettings(); StartReceiving(phoneMode); }
     }
 
     // ---------- setup (first run) ----------
@@ -990,7 +768,7 @@ public sealed partial class MainWindow : Window
     // ---------- install apps on the new laptop ----------
     void InstallApps_Click(object s, RoutedEventArgs e)
     {
-        var json = Path.Combine(savedTo != "" ? savedTo : dest, "AppList", "apps.json");
+        var json = Path.Combine(dest, "AppList", "apps.json");
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe",

@@ -71,19 +71,6 @@ public static class Net
         return p;
     }
 
-    // Detects a dead peer (WiFi off, cable out) in ~20 s instead of waiting forever on a silent socket.
-    public static void KeepAlive(Socket sock)
-    {
-        try
-        {
-            sock.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-            sock.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 8);
-            sock.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 3);
-            sock.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3);
-        }
-        catch { }
-    }
-
     public static void TryDelete(string? path) { try { if (!string.IsNullOrEmpty(path) && File.Exists(path)) File.Delete(path); } catch { } }
 }
 
@@ -151,18 +138,14 @@ public class Receiver
         return Net.UniquePath(p);
     }
 
-    // The .part file is still open when a transfer aborts: close it first, otherwise Windows refuses to delete it.
-    static void CloseAndDelete(FileStream? f, string? part) { try { f?.Dispose(); } catch { } Net.TryDelete(part); }
-
     async Task Handle(TcpClient c)
     {
-        bool mine = false; string? part = null; FileStream? f = null; var files = new List<ReceivedFile>();
+        bool mine = false; string? part = null; var files = new List<ReceivedFile>();
         string peer = "Laptop"; int skipped = 0;
         using (c)
         {
             try
             {
-                Net.KeepAlive(c.Client);
                 var s = c.GetStream();
                 var h = await Net.RecvMsg(s, cts.Token);
                 var given = Encoding.UTF8.GetBytes(h.GetProperty("code").GetString() ?? "");
@@ -189,7 +172,7 @@ public class Receiver
                     if (t == "cancel") throw new RemoteCancelledException();
                     string rel = m.GetProperty("path").GetString() ?? "file", fin = "";
                     long left = m.GetProperty("size").GetInt64(), size = left; idx++;
-                    f = null; bool skip = false;
+                    FileStream? f = null; bool skip = false;
                     try
                     {
                         fin = Safe(rel); part = fin + ".part";
@@ -198,15 +181,10 @@ public class Receiver
                     }
                     catch { skip = true; part = null; }
                     var shown = Path.GetFileName(rel);
-                    var fh = new byte[4];
                     while (left > 0)
                     {
-                        // file data arrives as chunks: [4-byte length][bytes]. Length -1 means "sender cancelled".
-                        await s.ReadExactlyAsync(fh, ct);
-                        int r = BinaryPrimitives.ReadInt32BigEndian(fh);
-                        if (r == -1) throw new RemoteCancelledException();
-                        if (r <= 0 || r > buf.Length || r > left) throw new IOException("Bad data from the other laptop");
-                        await s.ReadExactlyAsync(buf.AsMemory(0, r), ct);
+                        int r = await s.ReadAsync(buf.AsMemory(0, (int)Math.Min(buf.Length, left)), ct);
+                        if (r == 0) throw new IOException("The other laptop disconnected");
                         if (!skip && f != null)
                         {
                             try { await f.WriteAsync(buf.AsMemory(0, r), ct); }
@@ -224,15 +202,15 @@ public class Receiver
                 prog(new(total, total, 0, "", count, count));
                 raise(new(RxState.Complete, skipped == 0 ? $"{files.Count} file(s) saved" : $"{files.Count} saved, {skipped} could not be saved", peer, "Laptop", files.Count, total, files));
             }
-            catch (RemoteCancelledException) { CloseAndDelete(f, part); raise(new(RxState.Cancelled, "Cancelled by the sender", peer)); }
+            catch (RemoteCancelledException) { Net.TryDelete(part); raise(new(RxState.Cancelled, "Cancelled by the sender", peer)); }
             catch (OperationCanceledException)
             {
-                CloseAndDelete(f, part);
+                Net.TryDelete(part);
                 if (userCancelled) raise(new(RxState.Cancelled, "Transfer cancelled", peer));
             }
             catch (Exception e)
             {
-                CloseAndDelete(f, part);
+                Net.TryDelete(part);
                 if (mine) raise(new(RxState.Failed, e is IOException ? "Connection lost. The transfer was interrupted." : "Error: " + e.Message, peer));
             }
             finally
@@ -313,7 +291,6 @@ public static class Sender
         foreach (var (p, rel) in files) { try { sized.Add((p, rel, new FileInfo(p).Length)); } catch { } }
         long total = sized.Sum(x => x.len), done = 0, last = 0;
         using var c = new TcpClient(); await c.ConnectAsync(host, Net.Port, ct);
-        Net.KeepAlive(c.Client);
         var s = c.GetStream();
         await Net.SendMsg(s, new { code, total, count = sized.Count, name = deviceName }, ct);
         var reply = await Net.RecvMsg(s, ct);
@@ -322,7 +299,7 @@ public static class Sender
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var ack = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        bool remoteCancel = false, inBody = false; var fh = new byte[4];
+        bool remoteCancel = false;
         // One background reader owns all incoming messages: a "cancel" from the receiver, or the final ok.
         _ = Task.Run(async () =>
         {
@@ -342,22 +319,18 @@ public static class Sender
             {
                 linked.Token.ThrowIfCancellationRequested(); idx++;
                 FileStream? f; try { f = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite); } catch { continue; }
-                await Net.SendMsg(s, new { t = "file", path = rel, size = len }, CancellationToken.None);
+                await Net.SendMsg(s, new { t = "file", path = rel, size = len }, linked.Token);
                 await using (f)
                 {
-                    long sent = 0; inBody = true;
+                    long sent = 0;
                     while (sent < len)
                     {
-                        linked.Token.ThrowIfCancellationRequested();   // cancel is only checked between chunks, so a chunk is never half-written
                         int want = (int)Math.Min(buf.Length, len - sent);
                         int r = await f.ReadAsync(buf.AsMemory(0, want), linked.Token);
                         if (r == 0) { Array.Clear(buf, 0, want); r = want; } // file shrank: pad to keep protocol in sync
-                        BinaryPrimitives.WriteInt32BigEndian(fh, r);
-                        await s.WriteAsync(fh, CancellationToken.None); await s.WriteAsync(buf.AsMemory(0, r), CancellationToken.None);
-                        sent += r; done += r;
+                        await s.WriteAsync(buf.AsMemory(0, r), linked.Token); sent += r; done += r;
                         if (sw.ElapsedMilliseconds - last > 200) { last = sw.ElapsedMilliseconds; prog.Report(new(done, total, done / Math.Max(sw.Elapsed.TotalSeconds, .1), Path.GetFileName(rel), idx, sized.Count)); }
                     }
-                    inBody = false;
                 }
             }
             await Net.SendMsg(s, new { t = "end" }, linked.Token);
@@ -367,12 +340,7 @@ public static class Sender
         catch (Exception) when (remoteCancel) { throw new RemoteCancelledException(); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            try
-            {
-                if (inBody) { BinaryPrimitives.WriteInt32BigEndian(fh, -1); await s.WriteAsync(fh, CancellationToken.None); }   // inside file data: chunk length -1
-                else await Net.SendMsg(s, new { t = "cancel" }, CancellationToken.None);
-            }
-            catch { }
+            try { await Net.SendMsg(s, new { t = "cancel" }, CancellationToken.None); } catch { }
             throw;
         }
         catch (OperationCanceledException) { throw new IOException("Connection to the receiver was lost"); }
