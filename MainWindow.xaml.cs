@@ -525,6 +525,7 @@ public sealed partial class MainWindow : Window
     {
         int m = ModeRadio.SelectedIndex;
         FilesCard.Visibility = m == 2 ? Visibility.Collapsed : Visibility.Visible;
+        if (m == 2) RefreshCategorySizes();
         MigCard.Visibility = m == 2 ? Visibility.Visible : Visibility.Collapsed;
         AddFolderBtn.Visibility = m == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (m == 0 && items.Count > 1) { var first = items[0]; items.Clear(); items.Add(first); }
@@ -621,17 +622,39 @@ public sealed partial class MainWindow : Window
             if (gate.Result == GateResult.NeedConfirm && !await Confirm("Battery status unknown", gate.Message, "Continue", "Cancel")) return null;
 
             SendBtn.Content = "Scanning…";
-            var scans = await Task.Run(() => roots.Select(r => Scanner.Scan(r, CancellationToken.None)).ToList());
+            List<ScanResult> scans;
+            migScanCts = new CancellationTokenSource();
+            try
+            {
+                ShowScanOverlay($"Connected to {targetName}", "Connected", null, false);
+                await Task.Delay(1300, migScanCts.Token);
+                ShowScanOverlay("Searching for data to transfer...", "Scanning...", 0, true);
+                var scanToken = migScanCts.Token; int scanDone = 0;
+                scans = await Task.Run(() =>
+                {
+                    var list = new List<ScanResult>();
+                    foreach (var r in roots)
+                    {
+                        scanToken.ThrowIfCancellationRequested();
+                        list.Add(Scanner.Scan(r, scanToken));
+                        int n = Interlocked.Increment(ref scanDone);
+                        DispatcherQueue.TryEnqueue(() => SetScanPercent(n * 100 / Math.Max(1, roots.Count)));
+                    }
+                    return list;
+                });
+            }
+            catch (OperationCanceledException) { HideScanOverlay(); return null; }
             var files = scans.SelectMany(x => x.Files).ToList();
             long bytes = scans.Sum(x => x.Bytes); int blocked = scans.Sum(x => x.Blocked), dupCount = 0;
             if (skipDup && files.Count > 1)
             {
-                SendBtn.Content = "Checking duplicates…";
+                SendBtn.Content = "Checking duplicates…"; ShowScanOverlay("Searching for data to transfer...", "Checking for duplicate files...", null, true);
                 var groups = await Task.Run(() => Duplicates.Find(files.Select(f => f.p), CancellationToken.None));
                 var extra = Duplicates.Extras(groups); dupCount = extra.Count;
                 bytes -= groups.Sum(g => g.Wasted);
                 files = files.Where(f => !extra.Contains(f.p)).ToList();
             }
+            HideScanOverlay();
             int deselected = 0;
             if (files.Count > 0 && await Confirm("Choose individual files?", $"{files.Count} file(s) found.", "Choose files", "Use all"))
             {
@@ -696,7 +719,7 @@ public sealed partial class MainWindow : Window
             if (recheck.Result == GateResult.Blocked) { await Msg("Battery too low", recheck.Message); return null; }
             return new MigPlan(files, includeEmpty ? empties : new List<string>(), blocked, bytes, included, notSelected);
         }
-        finally { SendBtn.IsEnabled = true; SendBtn.Content = "Send"; }
+        finally { HideScanOverlay(); SendBtn.IsEnabled = true; SendBtn.Content = "Send"; }
     }
 
     async void Send_Click(object s, RoutedEventArgs e)

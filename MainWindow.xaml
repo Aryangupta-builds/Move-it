@@ -36,6 +36,48 @@
         </StackPanel>
       </Grid>
 
+      <!-- DATA SCAN overlay (Smart-Switch style): "Connected to ..." then "Searching for data to transfer..." with a glowing laptop and a real percentage -->
+      <Grid x:Name="ScanOverlay" Grid.Row="1" Visibility="Collapsed" Canvas.ZIndex="20" RequestedTheme="Dark" Background="#FF000000" Padding="24,0,24,24">
+        <Grid MaxWidth="1100" HorizontalAlignment="Center" ColumnSpacing="40">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="260"/><ColumnDefinition Width="*" MinWidth="320"/></Grid.ColumnDefinitions>
+          <StackPanel VerticalAlignment="Center" Spacing="22" HorizontalAlignment="Center" MaxWidth="460">
+            <FontIcon Glyph="&#xE71B;" FontSize="44" Foreground="#FF5B9DFF" HorizontalAlignment="Center"/>
+            <TextBlock x:Name="ScanOvTitle" Text="Searching for data to transfer..." FontSize="38" FontWeight="Bold" TextWrapping="Wrap" TextAlignment="Center" Foreground="White"/>
+          </StackPanel>
+          <Grid Grid.Column="1">
+            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <StackPanel VerticalAlignment="Center" Spacing="14" HorizontalAlignment="Center">
+              <Grid HorizontalAlignment="Center">
+                <Ellipse Width="460" Height="360" IsHitTestVisible="False">
+                  <Ellipse.Fill>
+                    <RadialGradientBrush>
+                      <GradientStop Color="#40605040" Offset="0"/><GradientStop Color="#20302830" Offset="0.5"/><GradientStop Color="#00000000" Offset="1"/>
+                    </RadialGradientBrush>
+                  </Ellipse.Fill>
+                </Ellipse>
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="0">
+                  <Border Width="340" Height="210" CornerRadius="22" BorderThickness="2" BorderBrush="#FF7FA8E8">
+                    <Border.Background>
+                      <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#FF1B2F6B" Offset="0"/><GradientStop Color="#FF1E5470" Offset="0.5"/><GradientStop Color="#FF5B7A3E" Offset="1"/>
+                      </LinearGradientBrush>
+                    </Border.Background>
+                    <StackPanel x:Name="ScanOvPctBox" VerticalAlignment="Center" HorizontalAlignment="Center" Orientation="Horizontal" Spacing="2">
+                      <TextBlock x:Name="ScanOvPct" Text="0" FontSize="52" FontWeight="Bold" Foreground="White" VerticalAlignment="Bottom"/>
+                      <TextBlock x:Name="ScanOvPctSign" Text="%" FontSize="24" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Bottom" Margin="0,0,0,8"/>
+                    </StackPanel>
+                  </Border>
+                  <Border Width="400" Height="10" CornerRadius="0,0,10,10" HorizontalAlignment="Center" Background="#FF7FA8E8" Opacity="0.85"/>
+                </StackPanel>
+              </Grid>
+              <TextBlock x:Name="ScanOvStatus" Text="Scanning..." FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="#FFD8D8D8"/>
+              <TextBlock x:Name="ScanOvHint" Text="Keep both laptops on the same WiFi and plugged in for a smooth transfer." HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Foreground="#FFCFCFCF" FontSize="13"/>
+            </StackPanel>
+            <Button x:Name="ScanOvStop" Grid.Row="1" Content="Stop" HorizontalAlignment="Stretch" MaxWidth="560" Height="56" CornerRadius="28" FontWeight="SemiBold" Click="ScanStop_Click" Background="#FF26272B" Foreground="White" AutomationProperties.Name="Stop scanning"/>
+          </Grid>
+        </Grid>
+      </Grid>
+
       <Grid x:Name="PagesHost" Grid.Row="1" Padding="24,0">
         <!-- SETUP / ONBOARDING (first run) -->
         <Grid x:Name="SetupPage" Visibility="Collapsed">
@@ -100,52 +142,40 @@
           </Grid>
         </Grid>
 
-        <!-- HOME -->
+        <!-- HOME (two-pane, Smart-Switch style: big title on the left, choices on the right) -->
         <Grid x:Name="HomePage">
           <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640" Spacing="28" Margin="0,8,0,28">
-              <StackPanel Spacing="4" HorizontalAlignment="Center">
-                <Border Width="84" Height="84" CornerRadius="24" HorizontalAlignment="Center"><Border.Shadow><ThemeShadow/></Border.Shadow><Image Source="ms-appx:///Assets/logo.png"/></Border>
-                <TextBlock Text="MoveIt" FontSize="34" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,12,0,0"/>
-                <TextBlock Text="Move everything to your new laptop over WiFi" Style="{StaticResource MiBody}" Opacity="0.7" HorizontalAlignment="Center" TextAlignment="Center"/>
-                <Border CornerRadius="14" Padding="12,5" HorizontalAlignment="Center" Margin="0,12,0,0" Background="{ThemeResource GlassBrush}" BorderBrush="{ThemeResource GlassStroke}" BorderThickness="1">
+            <Grid MaxWidth="1040" HorizontalAlignment="Center" VerticalAlignment="Center" ColumnSpacing="56" Margin="12,8,12,28">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="260"/><ColumnDefinition Width="*" MinWidth="300"/></Grid.ColumnDefinitions>
+              <StackPanel VerticalAlignment="Center" Spacing="14">
+                <Image Source="ms-appx:///Assets/logo.png" Width="72" Height="72" HorizontalAlignment="Left"/>
+                <TextBlock Text="Transfer your data" FontSize="40" FontWeight="Bold" TextWrapping="Wrap"/>
+                <TextBlock Text="Move files, folders and settings from your old laptop to your new one over your own WiFi. No cables, no cloud, no account." Style="{StaticResource MiBody}" Opacity="0.7"/>
+                <Border CornerRadius="16" Padding="12,6" HorizontalAlignment="Left" Background="{ThemeResource GlassBrush}" BorderBrush="{ThemeResource GlassStroke}" BorderThickness="1">
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <Ellipse Width="8" Height="8" Fill="{StaticResource OkBrush}" VerticalAlignment="Center"/>
                     <TextBlock x:Name="HomeInfo" FontSize="12" Opacity="0.85" VerticalAlignment="Center"/>
                   </StackPanel>
                 </Border>
               </StackPanel>
-
-              <StackPanel Spacing="14" Margin="12,0">
-                <Button x:Name="SendCard" Style="{StaticResource CardButton}" Click="SendCard_Click" AutomationProperties.Name="Send files from this laptop">
-                  <Grid ColumnSpacing="18">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileBlue}"><FontIcon Glyph="&#xE898;" FontSize="28" Foreground="White"/></Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <TextBlock Text="Send" Style="{StaticResource MiHeading}"/>
-                      <TextBlock Text="Send files, folders or your whole setup to another laptop" Style="{StaticResource MiCaption}"/>
-                    </StackPanel>
-                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16" Opacity="0.55" VerticalAlignment="Center"/>
-                  </Grid>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="14">
+                <Button x:Name="SendCard" Style="{StaticResource CardButton}" Click="SendCard_Click" MinHeight="150" HorizontalContentAlignment="Center" AutomationProperties.Name="Send files from this laptop">
+                  <StackPanel Spacing="12" HorizontalAlignment="Center">
+                    <Border Width="56" Height="56" CornerRadius="16" Background="{StaticResource TileBlue}" HorizontalAlignment="Center"><FontIcon Glyph="&#xE898;" FontSize="26" Foreground="White"/></Border>
+                    <TextBlock Text="Send from this laptop" Style="{StaticResource MiSubhead}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    <TextBlock Text="Files, folders or your whole setup" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                  </StackPanel>
                 </Button>
-                <Button x:Name="RxCard" Style="{StaticResource CardButton}" Click="RxCard_Click" AutomationProperties.Name="Receive files on this laptop">
-                  <Grid ColumnSpacing="18">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Border Width="64" Height="64" CornerRadius="18" Background="{StaticResource TileGreen}"><FontIcon Glyph="&#xE896;" FontSize="28" Foreground="White"/></Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <TextBlock Text="Receive" Style="{StaticResource MiHeading}"/>
-                      <TextBlock Text="Get files from another laptop, or from your phone or tablet" Style="{StaticResource MiCaption}"/>
-                    </StackPanel>
-                    <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16" Opacity="0.55" VerticalAlignment="Center"/>
-                  </Grid>
+                <Button x:Name="RxCard" Style="{StaticResource CardButton}" Click="RxCard_Click" MinHeight="150" HorizontalContentAlignment="Center" AutomationProperties.Name="Receive files on this laptop">
+                  <StackPanel Spacing="12" HorizontalAlignment="Center">
+                    <Border Width="56" Height="56" CornerRadius="16" Background="{StaticResource TileGreen}" HorizontalAlignment="Center"><FontIcon Glyph="&#xE896;" FontSize="26" Foreground="White"/></Border>
+                    <TextBlock Text="Receive on this laptop" Style="{StaticResource MiSubhead}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                    <TextBlock Text="From another laptop, phone or tablet" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
+                  </StackPanel>
                 </Button>
-              </StackPanel>
-
-              <StackPanel Spacing="6" HorizontalAlignment="Center">
                 <HyperlinkButton Click="OpenHistory_Click" HorizontalAlignment="Center"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE81C;" FontSize="14"/><TextBlock Text="Transfer history"/></StackPanel></HyperlinkButton>
-                <TextBlock Text="Private  •  No account  •  No cables" Style="{StaticResource MiCaption}" HorizontalAlignment="Center" TextAlignment="Center"/>
               </StackPanel>
-            </StackPanel>
+            </Grid>
           </ScrollViewer>
         </Grid>
 
@@ -249,25 +279,92 @@
                   </StackPanel>
                 </Border>
                 <Border x:Name="MigCard" Style="{StaticResource GlassCard}" Visibility="Collapsed">
-                  <StackPanel Spacing="8">
-                    <TextBlock Text="Complete migration" Style="{StaticResource MiSubhead}"/>
-                    <TextBlock Text="Copies your user folders and your app list. On the new laptop you can reinstall all apps with one tap." Style="{StaticResource MiCaption}"/>
-                    <HyperlinkButton Content="Select everything" Click="SelectAll_Click" Padding="0"/>
-                    <HyperlinkButton Content="Clear all" Click="ClearAll_Click" Padding="0"/>
-                    <Grid ColumnSpacing="12">
-                      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                      <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                      <CheckBox x:Name="CbDesktop" Content="Desktop" MinWidth="0"/>
-                      <CheckBox x:Name="CbDocuments" Content="Documents" Grid.Column="1" MinWidth="0"/>
-                      <CheckBox x:Name="CbDownloads" Content="Downloads" Grid.Column="2" MinWidth="0"/>
-                      <CheckBox x:Name="CbPictures" Content="Pictures" Grid.Row="1" MinWidth="0"/>
-                      <CheckBox x:Name="CbVideos" Content="Videos" Grid.Row="1" Grid.Column="1" MinWidth="0"/>
-                      <CheckBox x:Name="CbMusic" Content="Music" Grid.Row="1" Grid.Column="2" MinWidth="0"/>
+                  <StackPanel Spacing="6">
+                    <Grid>
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <StackPanel>
+                        <TextBlock Text="Select data to transfer" Style="{StaticResource MiHeading}"/>
+                        <TextBlock x:Name="SelTotal" Text="0 MB selected" Style="{StaticResource MiCaption}"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                        <HyperlinkButton Content="Select all" Click="SelectAll_Click"/>
+                        <HyperlinkButton Content="Clear" Click="ClearAll_Click"/>
+                      </StackPanel>
                     </Grid>
-                    <CheckBox x:Name="CbApps" Content="Installed apps list + auto-reinstall script (winget)"/>
-                    <CheckBox x:Name="CbBrowser" Content="Browser bookmarks (Chrome, Edge). Passwords and sign-ins are never copied."/>
-                    <CheckBox x:Name="CbGames" Content="Game saves (Documents\My Games, Saved Games)"/>
-                    <CheckBox x:Name="CbDev" Content="Editor settings (VS Code, Windows Terminal). No tokens or keys."/>
+                    <TextBlock Text="Your files" Style="{StaticResource MiCaption}" FontWeight="SemiBold" Margin="0,8,0,0"/>
+                    <CheckBox x:Name="CbDesktop" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Desktop">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FF3B82F6"><FontIcon Glyph="&#xE7F4;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Desktop" FontWeight="SemiBold"/><TextBlock x:Name="SzDesktop" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <CheckBox x:Name="CbDocuments" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Documents">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FF8B7355"><FontIcon Glyph="&#xE8A5;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Documents" FontWeight="SemiBold"/><TextBlock x:Name="SzDocuments" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <CheckBox x:Name="CbDownloads" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Downloads">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FF14B8A6"><FontIcon Glyph="&#xE896;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Downloads" FontWeight="SemiBold"/><TextBlock x:Name="SzDownloads" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <CheckBox x:Name="CbPictures" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Pictures">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FFEC4899"><FontIcon Glyph="&#xEB9F;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Pictures" FontWeight="SemiBold"/><TextBlock x:Name="SzPictures" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <CheckBox x:Name="CbVideos" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Videos">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FF8B5CF6"><FontIcon Glyph="&#xE714;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Videos" FontWeight="SemiBold"/><TextBlock x:Name="SzVideos" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <CheckBox x:Name="CbMusic" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Music">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FF6366F1"><FontIcon Glyph="&#xE8D6;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Music" FontWeight="SemiBold"/><TextBlock x:Name="SzMusic" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <Rectangle Height="1" Fill="{ThemeResource GlassStroke}" Margin="0,6"/>
+                    <TextBlock Text="Apps and settings" Style="{StaticResource MiCaption}" FontWeight="SemiBold"/>
+                    <CheckBox x:Name="CbApps" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Installed apps list (reinstall script, programs are not copied)">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FF06B6D4"><FontIcon Glyph="&#xE71D;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Installed apps list (reinstall script, programs are not copied)" FontWeight="SemiBold"/><TextBlock x:Name="SzApps" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <CheckBox x:Name="CbBrowser" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Browser bookmarks (no passwords or sign-ins)">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FFF97316"><FontIcon Glyph="&#xE774;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Browser bookmarks (no passwords or sign-ins)" FontWeight="SemiBold"/><TextBlock x:Name="SzBrowser" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <CheckBox x:Name="CbGames" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Game saves">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FF22C55E"><FontIcon Glyph="&#xE7FC;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Game saves" FontWeight="SemiBold"/><TextBlock x:Name="SzGames" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <CheckBox x:Name="CbDev" MinWidth="0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,6,0,6" Checked="Cat_Changed" Unchecked="Cat_Changed" AutomationProperties.Name="Editor settings (VS Code, Windows Terminal; no keys)">
+                      <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border Width="40" Height="40" CornerRadius="12" Background="#FF64748B"><FontIcon Glyph="&#xE943;" FontSize="18" Foreground="White"/></Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Text="Editor settings (VS Code, Windows Terminal; no keys)" FontWeight="SemiBold"/><TextBlock x:Name="SzDev" Style="{StaticResource MiCaption}" Text=""/></StackPanel>
+                      </Grid>
+                    </CheckBox>
+                    <Rectangle Height="1" Fill="{ThemeResource GlassStroke}" Margin="0,6"/>
                     <CheckBox x:Name="CbSkipDup" Content="Skip exact duplicate files (same content). Takes longer to scan."/>
                     <TextBlock Text="You will see a full review (sizes, empty folders, battery, free space) before anything is sent." Style="{StaticResource MiCaption}"/>
                   </StackPanel>
