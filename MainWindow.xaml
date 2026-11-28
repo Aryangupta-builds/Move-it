@@ -10,7 +10,7 @@
     <!-- Narrow/wide layout is applied in code (ApplyLayout in MainWindow.xaml.cs) -->
 
     <!-- soft aurora background (Composition, see AuroraBg.xaml.cs) -->
-    <local:AuroraBg x:Name="Aurora"/>
+    <local:AuroraBg x:Name="Aurora" Visibility="Collapsed"/>
 
     <Grid>
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -65,7 +65,7 @@
                     <StackPanel Spacing="12">
                       <TextBlock TextWrapping="Wrap" Opacity="0.85" Text="Windows Firewall blocks other devices from reaching apps by default. MoveIt needs access on your private WiFi so the two laptops can find each other and your phone can connect. Everything stays on your local network and nothing goes to the internet."/>
                       <TextBlock TextWrapping="Wrap" Opacity="0.85" Text="Tap the button, then choose Yes on the Windows prompt. You only do this once."/>
-                      <Button x:Name="FwBtn" Content="Allow network access" Style="{StaticResource AccentButtonStyle}" CornerRadius="12" HorizontalAlignment="Stretch" Height="44" Click="Firewall_Click"/>
+                      <Button x:Name="FwBtn" Content="Allow network access" Style="{StaticResource AccentButtonStyle}" CornerRadius="22" HorizontalAlignment="Stretch" Height="48" Click="Firewall_Click"/>
                       <TextBlock x:Name="FwStatus" Opacity="0.85" TextWrapping="Wrap"/>
                     </StackPanel>
                   </Border>
@@ -92,9 +92,9 @@
               <StackPanel x:Name="Dots" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center"/>
               <Grid ColumnSpacing="10">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Button x:Name="StepBack" Style="{StaticResource MiButton}" Content="Back" CornerRadius="14" Height="44" MinWidth="90" Click="StepBack_Click"/>
+                <Button x:Name="StepBack" Style="{StaticResource MiButton}" Content="Back" CornerRadius="22" Height="48" MinWidth="90" Click="StepBack_Click"/>
                 <HyperlinkButton x:Name="StepSkip" Grid.Column="1" Content="Skip intro" HorizontalAlignment="Center" Click="StepSkip_Click"/>
-                <Button x:Name="StepNext" Grid.Column="2" Content="Next" Style="{StaticResource AccentButtonStyle}" CornerRadius="14" Height="44" MinWidth="130" Click="StepNext_Click"/>
+                <Button x:Name="StepNext" Grid.Column="2" Content="Next" Style="{StaticResource AccentButtonStyle}" CornerRadius="22" Height="48" MinWidth="130" Click="StepNext_Click"/>
               </Grid>
             </StackPanel>
           </Grid>

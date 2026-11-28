@@ -8,61 +8,59 @@
       </ResourceDictionary.MergedDictionaries>
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Default">
-          <LinearGradientBrush x:Key="BgBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#FF03050E" Offset="0"/><GradientStop Color="#FF081029" Offset="1"/>
-          </LinearGradientBrush>
-          <LinearGradientBrush x:Key="GlassBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#1FFFFFFF" Offset="0"/><GradientStop Color="#0DFFFFFF" Offset="1"/></LinearGradientBrush>
-          <AcrylicBrush x:Key="ScrimBrush" TintColor="#FF050816" TintOpacity="0.15" FallbackColor="#00000000"/>
-          <LinearGradientBrush x:Key="GlassStroke" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#66FFFFFF" Offset="0"/><GradientStop Color="#14FFFFFF" Offset="1"/>
-          </LinearGradientBrush>
+          <SolidColorBrush x:Key="BgBrush" Color="#FF101114"/>
+          <SolidColorBrush x:Key="GlassBrush" Color="#FF1C1E23"/>
+          <SolidColorBrush x:Key="ScrimBrush" Color="#00000000"/>
+          <SolidColorBrush x:Key="GlassStroke" Color="#FF2A2D34"/>
+          <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FF3E91FF"/>
+          <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#E63E91FF"/>
+          <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#CC3E91FF"/>
+          <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FF0B1220"/>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Light">
-          <LinearGradientBrush x:Key="BgBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#FFEEF5FF" Offset="0"/><GradientStop Color="#FFCFE2FF" Offset="1"/>
-          </LinearGradientBrush>
-          <LinearGradientBrush x:Key="GlassBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#E6FFFFFF" Offset="0"/><GradientStop Color="#A6FFFFFF" Offset="1"/></LinearGradientBrush>
-          <AcrylicBrush x:Key="ScrimBrush" TintColor="#FFFFFFFF" TintOpacity="0.2" FallbackColor="#00FFFFFF"/>
-          <LinearGradientBrush x:Key="GlassStroke" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#EEFFFFFF" Offset="0"/><GradientStop Color="#55FFFFFF" Offset="1"/>
-          </LinearGradientBrush>
+          <SolidColorBrush x:Key="BgBrush" Color="#FFF3F5F9"/>
+          <SolidColorBrush x:Key="GlassBrush" Color="#FFFFFFFF"/>
+          <SolidColorBrush x:Key="ScrimBrush" Color="#00FFFFFF"/>
+          <SolidColorBrush x:Key="GlassStroke" Color="#FFE4E8EF"/>
+          <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FF1A73E8"/>
+          <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#E61A73E8"/>
+          <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#CC1A73E8"/>
+          <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FFFFFFFF"/>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
 
       <!-- Dark panel behind the particle animation (same in light and dark theme) -->
-      <LinearGradientBrush x:Key="StageBrush" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#FF040A1C" Offset="0"/><GradientStop Color="#FF0A1B4D" Offset="1"/>
-      </LinearGradientBrush>
-      <LinearGradientBrush x:Key="QrRing" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF38BDF8" Offset="0"/><GradientStop Color="#FF8B5CF6" Offset="0.55"/><GradientStop Color="#FFEC4899" Offset="1"/></LinearGradientBrush>
-      <LinearGradientBrush x:Key="TileBlue" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF2F80ED" Offset="0"/><GradientStop Color="#FF56CCF2" Offset="1"/></LinearGradientBrush>
-      <LinearGradientBrush x:Key="TileGreen" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF11998E" Offset="0"/><GradientStop Color="#FF38EF7D" Offset="1"/></LinearGradientBrush>
-      <LinearGradientBrush x:Key="TileAmber" StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FFF59E0B" Offset="0"/><GradientStop Color="#FFFCD34D" Offset="1"/></LinearGradientBrush>
+      <LinearGradientBrush x:Key="StageBrush" StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#FF0B1020" Offset="0"/><GradientStop Color="#FF0E1A3A" Offset="1"/></LinearGradientBrush>
+      <SolidColorBrush x:Key="QrRing" Color="#FF2F7BF5"/>
+      <SolidColorBrush x:Key="TileBlue" Color="#FF2F7BF5"/>
+      <SolidColorBrush x:Key="TileGreen" Color="#FF16A34A"/>
+      <SolidColorBrush x:Key="TileAmber" Color="#FFF59E0B"/>
       <SolidColorBrush x:Key="OkBrush" Color="#FF10B981"/>
       <SolidColorBrush x:Key="WarnBrush" Color="#FFF59E0B"/>
       <SolidColorBrush x:Key="ErrBrush" Color="#FFEF4444"/>
 
       <!-- ===== Type scale: Title 28 / Heading 20 / Subhead 15 / Body 14 / Caption 12 ===== -->
-      <Style x:Key="MiTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="28"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+      <Style x:Key="MiTitle" TargetType="TextBlock"><Setter Property="FontSize" Value="32"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
       <Style x:Key="MiHeading" TargetType="TextBlock"><Setter Property="FontSize" Value="20"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
       <Style x:Key="MiSubhead" TargetType="TextBlock"><Setter Property="FontSize" Value="15"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
       <Style x:Key="MiBody" TargetType="TextBlock"><Setter Property="FontSize" Value="14"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
-      <Style x:Key="MiCaption" TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="Opacity" Value="0.7"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
+      <Style x:Key="MiCaption" TargetType="TextBlock"><Setter Property="FontSize" Value="12"/><Setter Property="Opacity" Value="0.65"/><Setter Property="TextWrapping" Value="Wrap"/></Style>
 
       <!-- ===== Cards (spacing: 20 padding, 20 corner radius, subtle shadow) ===== -->
       <Style x:Key="GlassCard" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource GlassBrush}"/>
         <Setter Property="BorderBrush" Value="{ThemeResource GlassStroke}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="18"/>
-        <Setter Property="Padding" Value="20"/>
+        <Setter Property="CornerRadius" Value="24"/>
+        <Setter Property="Padding" Value="22"/>
       </Style>
 
       <!-- ===== Buttons ===== -->
       <Style x:Key="MiPrimaryButton" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
-        <Setter Property="CornerRadius" Value="12"/><Setter Property="MinHeight" Value="44"/><Setter Property="Padding" Value="20,8"/>
+        <Setter Property="CornerRadius" Value="22"/><Setter Property="MinHeight" Value="44"/><Setter Property="Padding" Value="24,8"/><Setter Property="FontWeight" Value="SemiBold"/>
       </Style>
       <Style x:Key="MiButton" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="CornerRadius" Value="12"/><Setter Property="MinHeight" Value="40"/><Setter Property="Padding" Value="16,6"/>
+        <Setter Property="CornerRadius" Value="20"/><Setter Property="MinHeight" Value="40"/><Setter Property="Padding" Value="18,6"/>
       </Style>
 
       <!-- Big tappable card (Home / Receive choose): hover, press and keyboard-focus animation, works with Enter/Space -->
@@ -70,8 +68,8 @@
         <Setter Property="Background" Value="{ThemeResource GlassBrush}"/>
         <Setter Property="BorderBrush" Value="{ThemeResource GlassStroke}"/>
         <Setter Property="BorderThickness" Value="1.2"/>
-        <Setter Property="CornerRadius" Value="26"/>
-        <Setter Property="Padding" Value="24,18"/>
+        <Setter Property="CornerRadius" Value="28"/>
+        <Setter Property="Padding" Value="24,20"/>
         <Setter Property="MinHeight" Value="104"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -88,7 +86,7 @@
                       <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1"/><Setter Target="Tf.ScaleY" Value="1"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="PointerOver">
-                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1.015"/><Setter Target="Tf.ScaleY" Value="1.015"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
+                      <VisualState.Setters><Setter Target="Tf.ScaleX" Value="1.01"/><Setter Target="Tf.ScaleY" Value="1.01"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
                     </VisualState>
                     <VisualState x:Name="Pressed">
                       <VisualState.Setters><Setter Target="Tf.ScaleX" Value="0.97"/><Setter Target="Tf.ScaleY" Value="0.97"/><Setter Target="Bd.BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}"/></VisualState.Setters>
@@ -101,9 +99,7 @@
                     <VisualState x:Name="PointerFocused"/>
                   </VisualStateGroup>
                 </VisualStateManager.VisualStateGroups>
-                <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}" Translation="0,0,16">
-                  <Border.Shadow><ThemeShadow/></Border.Shadow>
-                </Border>
+                <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{TemplateBinding CornerRadius}"/>
                 <ContentPresenter x:Name="ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"/>
               </Grid>
             </ControlTemplate>
